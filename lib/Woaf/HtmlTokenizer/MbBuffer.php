@@ -32,12 +32,12 @@ class MbBuffer
 
     }*/
 
-    public function peek() {
-        $seekIn = substr($this->buffer, $this->curBytes, 4);
+    public function peek($len = 1) {
+        $seekIn = substr($this->buffer, $this->curBytes, 4 * $len);
         if ($seekIn === false || $seekIn === "") {
             return null;
         }
-        $peeked = mb_substr($seekIn, 0, 1, $this->internalEncoding);
+        $peeked = mb_substr($seekIn, 0, $len, $this->internalEncoding);
         if ($peeked === false || $peeked === "") {
             return null;
         }
@@ -52,12 +52,16 @@ class MbBuffer
         return $next === $matching;
     }
 
-    public function read() {
-        $read = $this->peek();
+    public function read($len = 1) {
+        $read = $this->peek($len);
         if ($read === null) {
             return null;
         }
-        $this->cur++;
+        if ($len == 1) {
+            $this->cur++;
+        } else {
+            $this->cur += mb_strlen($read, $this->internalEncoding);
+        }
         $this->curBytes += strlen($read);
         return $read;
     }
