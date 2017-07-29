@@ -9,11 +9,13 @@
 namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
 
-abstract class TagTokenBuilder
+abstract class HtmlTagTokenBuilder
 {
     protected $name;
     protected $isSelfClosing = false;
     protected $attributes = [];
+
+    private $lastAttribute;
 
     public function setName($name) {
         $this->name = $name;
@@ -29,7 +31,17 @@ abstract class TagTokenBuilder
         return $this;
     }
 
+    public function addAttributeName($name) {
+        $this->lastAttribute = $name;
+        $this->attributes[$name] = null;
+    }
 
+    public function addAttributeValue($value) {
+        if (!isset($this->lastAttribute)) {
+            throw new \Exception("No open attribute!");
+        }
+        $this->attributes[$this->lastAttribute] = $value;
+    }
 
     abstract public function build();
 }

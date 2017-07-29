@@ -8,7 +8,7 @@
 
 namespace Woaf\HtmlTokenizer;
 
-class MbBuffer
+class HtmlStream
 {
 
     private $internalEncoding;
@@ -17,12 +17,34 @@ class MbBuffer
     private $curBytes = 0;
     private $bufLen = 0;
 
+    private $markCur;
+    private $markCurBytes;
+
+    public function mark() {
+        $this->markCur = $this->cur;
+        $this->markCurBytes = $this->curBytes;
+    }
+
+    public function reset() {
+        $this->cur = $this->markCur;
+        $this->curBytes = $this->markCurBytes;
+    }
+
+    private function preProcessBuffer($buf)
+    {
+        $enc = mb_regex_encoding();
+        mb_regex_encoding($this->internalEncoding);
+        $buf = mb_ereg_replace("\r\n?", "\n", $buf);
+        mb_regex_encoding($enc);
+        return $buf;
+    }
+
     public function __construct($buf, $encoding)
     {
         assert(is_string($buf));
         $this->internalEncoding = mb_internal_encoding();
-        $this->buffer = mb_convert_encoding($buf, $this->internalEncoding, $encoding);
-        $this->bufLen = mb_strlen($buf, $this->internalEncoding);
+        $this->buffer = $this->preProcessBuffer(mb_convert_encoding($buf, $this->internalEncoding, $encoding));
+        $this->bufLen = mb_strlen($this->buffer, $this->internalEncoding);
     }
 
 /**    public function seek($n) {
@@ -41,6 +63,7 @@ class MbBuffer
         if ($peeked === false || $peeked === "") {
             return null;
         }
+
         return $peeked;
     }
 

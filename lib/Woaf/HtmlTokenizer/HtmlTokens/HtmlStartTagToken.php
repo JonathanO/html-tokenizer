@@ -9,16 +9,16 @@
 namespace Woaf\HtmlTokenizer\HtmlTokens;
 
 
-use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlEndTagTokenBuilder;
+use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlStartTagTokenBuilder;
 use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlTagTokenBuilder;
 
-class HtmlEndTagToken extends AbstractHtmlTagToken {
+class HtmlStartTagToken extends AbstractHtmlTagToken {
 
     /**
      * @return HtmlTagTokenBuilder
      */
     public static function builder()
     {
-        return new HtmlEndTagTokenBuilder();
+        return new HtmlStartTagTokenBuilder();
     }
 }

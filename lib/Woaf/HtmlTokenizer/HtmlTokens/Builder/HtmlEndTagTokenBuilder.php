@@ -11,7 +11,7 @@ namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 
-class HtmlEndTagTokenBuilder extends TagTokenBuilder
+class HtmlEndTagTokenBuilder extends HtmlTagTokenBuilder
 {
     public function build() {
         return new HtmlEndTagToken($this->name, $this->isSelfClosing, $this->attributes);
