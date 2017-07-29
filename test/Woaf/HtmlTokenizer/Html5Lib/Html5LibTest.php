@@ -56,7 +56,7 @@ class Html5LibTest extends TestCase
 
     private static function unescape($victim) {
         return preg_replace_callback('/\\\u([a-zA-Z0-9]{4})/', function($matches) {
-            return mb_decode_numericentity("&#x" . $matches[1] . ";", [ 0x0, 0xffff, 0, 0xffff ]);
+            return mb_decode_numericentity("&#x" . $matches[1] . ";", [ 0x0, 0x10ffff, 0, 0x10ffff ]);
         }, $victim);
     }
     /**
@@ -118,6 +118,8 @@ class Html5LibTest extends TestCase
             case "unexpected-character-in-unquoted-attribute-value":
                 return new ParseError();
             case "noncharacter-in-input-stream":
+                return new ParseError();
+            case "null-character-reference":
                 return new ParseError();
             default:
                 throw new \Exception("Unknown error type {$error->code}");

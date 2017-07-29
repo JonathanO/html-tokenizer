@@ -21,4 +21,8 @@ class HtmlEndTagToken extends AbstractHtmlTagToken {
     {
         return new HtmlEndTagTokenBuilder();
     }
+
+    public function __toString() {
+        return "</" . $this->getData() . " " . $this->buildAttributeString() . $this->isSelfClosing() ? "/" : "" . ">";
+    }
 }

@@ -63,4 +63,9 @@ abstract class AbstractHtmlTagToken implements HtmlToken
         return $this->attributes;
     }
 
+    protected function buildAttributeString()
+    {
+        return implode(" ", array_map(function($k, $v) { return "$k=\"$v\""; }, array_keys($this->getAttributes()), $this->getAttributes()));
+    }
+
 }

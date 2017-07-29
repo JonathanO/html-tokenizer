@@ -21,4 +21,8 @@ class HtmlStartTagToken extends AbstractHtmlTagToken {
     {
         return new HtmlStartTagTokenBuilder();
     }
+
+    public function __toString() {
+        return "<" . $this->getData() . " " . $this->buildAttributeString() . ($this->isSelfClosing() ? "/" : "") . ">";
+    }
 }

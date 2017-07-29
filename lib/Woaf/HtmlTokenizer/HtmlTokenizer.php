@@ -15,6 +15,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\LoggerAwareTrait;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlToken;
 use Woaf\HtmlTokenizer\Tables\CharacterReferenceDecoder;
 
 class HtmlTokenizer
@@ -115,6 +116,11 @@ class HtmlTokenizer
         $this->stack[0] = $state;
     }
 
+    private function emit(HtmlToken $token, &$tokens) {
+        if ($this->logger) $this->logger->debug("Emitting token " . $token);
+        $tokens[] = $token;
+    }
+
     private $voidElements;
     private $rawTextElements;
     private $escapableRawTextElements;
@@ -131,7 +137,7 @@ class HtmlTokenizer
         $this->escapableRawTextElements = array_flip(["textarea", "title"]);
         $this->foreignElements = array_flip(["svg", "mathml"]); // TODO: fix namespace usage
         $this->stack[] = self::$STATE_DATA;
-        $this->FFFDReplacementCharacter = mb_decode_numericentity("&#xFFFD;", [ 0x0, 0xffff, 0, 0xffff ]);
+        $this->FFFDReplacementCharacter = mb_decode_numericentity("&#xFFFD;", [ 0x0, 0x10ffff, 0, 0x10ffff ]);
     }
 
     protected function andWhitespace($match) {
@@ -203,7 +209,7 @@ class HtmlTokenizer
                     }
                     $tok = $this->consumeData($buffer, self::$STATE_TAG_OPEN, $errors, false);
                     if ($tok != null) {
-                        $tokens[] = $tok;
+                        $this->emit($tok, $tokens);
                     }
                     break;
                 case self::$STATE_RCDATA:
@@ -213,7 +219,7 @@ class HtmlTokenizer
                     }
                     $tok = $this->consumeData($buffer, self::$STATE_RCDATA_LT_SIGN, $errors);
                     if ($tok != null) {
-                        $tokens[] = $tok;
+                        $this->emit($tok, $tokens);
                     }
                     break;
                 case self::$STATE_RAWTEXT:
@@ -223,7 +229,7 @@ class HtmlTokenizer
                     }
                     $tok = $this->consumeData($buffer, self::$STATE_RAWTEXT_LT_SIGN, $errors);
                     if ($tok != null) {
-                        $tokens[] = $tok;
+                        $this->emit($tok, $tokens);
                     }
                     break;
                 case self::$STATE_SCRIPT_DATA:
@@ -233,7 +239,7 @@ class HtmlTokenizer
                     }
                     $tok = $this->consumeData($buffer, self::$STATE_SCRIPT_DATA_LT_SIGN, $errors);
                     if ($tok != null) {
-                        $tokens[] = $tok;
+                        $this->emit($tok, $tokens);
                     }
                     break;
                 case self::$STATE_PLAINTEXT:
@@ -249,7 +255,7 @@ class HtmlTokenizer
                         $data .= $this->FFFDReplacementCharacter;
                     }
                     if ($data !== "") {
-                        $tokens[] = new HtmlCharToken($data);
+                        $this->emit(new HtmlCharToken($data), $tokens);
                     }
                     break;
                 case self::$STATE_TAG_OPEN:
@@ -273,7 +279,7 @@ class HtmlTokenizer
                                 $this->setState(self::$STATE_TAG_NAME);
                             } else {
                                 $errors[] = new ParseError();
-                                $tokens[] = new HtmlCharToken("<");
+                                $this->emit(new HtmlCharToken("<"), $tokens);
                                 $this->setState(self::$STATE_DATA);
                             }
                     }
@@ -311,7 +317,7 @@ class HtmlTokenizer
                             $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
                             break;
                         case ">":
-                            $tokens[] = $this->currentTokenBuilder->build();
+                            $this->emit($this->currentTokenBuilder->build(), $tokens);
                             $this->setState(self::$STATE_DATA);
                             break;
                         default:
@@ -327,7 +333,7 @@ class HtmlTokenizer
                         $buffer->read();
                         $this->setState(self::$STATE_RCDATA_END_TAG_OPEN);
                     } else {
-                        $tokens[] = new HtmlCharToken("<");
+                        $this->emit(new HtmlCharToken("<"), $tokens);
                         $this->setState(self::$STATE_RCDATA);
                     }
                     break;
@@ -337,7 +343,7 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder();
                         $this->setState(self::$STATE_RCDATA_END_TAG_NAME);
                     } else {
-                        $tokens[] = new HtmlCharToken("</");
+                        $this->emit(new HtmlCharToken("</"), $tokens);
                         $this->setState(self::$STATE_RCDATA);
                     }
                     break;
@@ -345,7 +351,7 @@ class HtmlTokenizer
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
-                        $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                        $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                         $this->setState(self::$STATE_RCDATA);
                     } else {
                         switch ($buffer->peek()) {
@@ -365,12 +371,12 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
-                                $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                                $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                                 $this->setState(self::$STATE_RCDATA);
                         }
                     }
@@ -381,7 +387,7 @@ class HtmlTokenizer
                         $buffer->read();
                         $this->setState(self::$STATE_RAWTEXT_END_TAG_OPEN);
                     } else {
-                        $tokens[] = new HtmlCharToken("<");
+                        $this->emit(new HtmlCharToken("<"), $tokens);
                         $this->setState(self::$STATE_RAWTEXT);
                     }
                     break;
@@ -391,7 +397,7 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder();
                         $this->setState(self::$STATE_RAWTEXT_END_TAG_NAME);
                     } else {
-                        $tokens[] = new HtmlCharToken("</");
+                        $this->emit(new HtmlCharToken("</"), $tokens);
                         $this->setState(self::$STATE_RAWTEXT);
                     }
                     break;
@@ -399,7 +405,7 @@ class HtmlTokenizer
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
-                        $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                        $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                         $this->setState(self::$STATE_RAWTEXT);
                     } else {
                         switch ($buffer->peek()) {
@@ -419,12 +425,12 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
-                                $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                                $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                                 $this->setState(self::$STATE_RAWTEXT);
                         }
                     }
@@ -437,9 +443,9 @@ class HtmlTokenizer
                     } elseif ($next === "!") {
                         $buffer->read();
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPE_START);
-                        $tokens[] = new HtmlCharToken("<!");
+                        $this->emit(new HtmlCharToken("<!"), $tokens);
                     } else {
-                        $tokens[] = new HtmlCharToken("<");
+                        $this->emit(new HtmlCharToken("<"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA);
                     }
                     break;
@@ -449,7 +455,7 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder()();
                         $this->setState(self::$STATE_SCRIPT_DATA_END_TAG_NAME);
                     } else {
-                        $tokens[] = new HtmlCharToken("</");
+                        $this->emit(new HtmlCharToken("</"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA);
                     }
                     break;
@@ -457,7 +463,7 @@ class HtmlTokenizer
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
-                        $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                        $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA);
                     } else {
                         switch ($buffer->peek()) {
@@ -477,19 +483,19 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
-                                $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                                $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                                 $this->setState(self::$STATE_SCRIPT_DATA);
                         }
                     }
                     break;
                 case self::$STATE_SCRIPT_DATA_ESCAPE_START:
                     if ($buffer->readOnly("-") == "-") {
-                        $tokens[] = new HtmlCharToken("-");
+                        $this->emit(new HtmlCharToken("-"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA_START_DASH);
                     } else {
                         $this->setState(self::$STATE_SCRIPT_DATA);
@@ -497,7 +503,7 @@ class HtmlTokenizer
                     break;
                 case self::$STATE_SCRIPT_DATA_START_DASH:
                     if ($buffer->readOnly("-") == "-") {
-                        $tokens[] = new HtmlCharToken("-");
+                        $this->emit(new HtmlCharToken("-"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
                     } else {
                         $this->setState(self::$STATE_SCRIPT_DATA);
@@ -520,14 +526,14 @@ class HtmlTokenizer
                             break;
                     }
                     if ($data != "") {
-                        $tokens[] = new HtmlCharToken($data);
+                        $this->emit(new HtmlCharToken($data), $tokens);
                     }
                     break;
                 case self::$STATE_SCRIPT_DATA_ESCAPED_DASH:
                     switch ($buffer->peek()) {
                         case "-":
                             $buffer->read();
-                            $tokens[] = new HtmlCharToken("-");
+                            $this->emit(new HtmlCharToken("-"), $tokens);
                             $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
                             break;
                         case "<":
@@ -539,7 +545,7 @@ class HtmlTokenizer
                             $this->setState(self::$STATE_DATA);
                             break;
                         default:
-                            $tokens[] = new HtmlCharToken($buffer->read());
+                            $this->emit(new HtmlCharToken($buffer->read()), $tokens);
                             $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
@@ -547,7 +553,7 @@ class HtmlTokenizer
                     switch ($buffer->peek()) {
                         case "-":
                             $buffer->read();
-                            $tokens[] = new HtmlCharToken("-");
+                            $this->emit(new HtmlCharToken("-"), $tokens);
                             break;
                         case "<":
                             $buffer->read();
@@ -555,7 +561,7 @@ class HtmlTokenizer
                             break;
                         case ">":
                             $buffer->read();
-                            $tokens[] = new HtmlCharToken(">");
+                            $this->emit(new HtmlCharToken(">"), $tokens);
                             $this->setState(self::$STATE_SCRIPT_DATA);
                             break;
                         case null:
@@ -563,7 +569,7 @@ class HtmlTokenizer
                             $this->setState(self::$STATE_DATA);
                             break;
                         default:
-                            $tokens[] = new HtmlCharToken($buffer->read());
+                            $this->emit(new HtmlCharToken($buffer->read()), $tokens);
                             $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
@@ -573,10 +579,10 @@ class HtmlTokenizer
                         $buffer->read();
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN);
                     } else if (preg_match("/[a-zA-Z]/u", $next)) {
-                        $tokens[] = new HtmlCharToken("<");
+                        $this->emit(new HtmlCharToken("<"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START);
                     } else {
-                        $tokens[] = new HtmlCharToken("<");
+                        $this->emit(new HtmlCharToken("<"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
@@ -586,7 +592,7 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder()();
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME);
                     } else {
-                        $tokens[] = new HtmlCharToken("</");
+                        $this->emit(new HtmlCharToken("</"), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
@@ -594,7 +600,7 @@ class HtmlTokenizer
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
-                        $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                        $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                         $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                     } else {
                         switch ($buffer->peek()) {
@@ -611,12 +617,12 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read();
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
-                                $tokens[] = new HtmlCharToken("</" . $tempBuffer);
+                                $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
                                 $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                         }
                     }
@@ -642,7 +648,7 @@ class HtmlTokenizer
                             // Valid if peek returns null too. I think? TODO
                             $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
                     }
-                    $tokens[] = new HtmlCharToken($tempBuffer);
+                    $this->emit(new HtmlCharToken($tempBuffer), $tokens);
                     break;
                 case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED:
                     $data = $buffer->consumeUntil("-<"); // TODO: Handle nulls
@@ -661,7 +667,7 @@ class HtmlTokenizer
                             break;
                     }
                     if ($data != "") {
-                        $tokens[] = new HtmlCharToken($data);
+                        $this->emit(new HtmlCharToken($data), $tokens);
                     }
                     break;
                 case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH:
@@ -671,7 +677,7 @@ class HtmlTokenizer
                         $this->setState(self::$STATE_DATA);
                         break;
                     } else {
-                        $tokens[] = new HtmlCharToken($char);
+                        $this->emit(new HtmlCharToken($char), $tokens);
                         switch ($char) {
                             case "-":
                                 $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH);
@@ -692,7 +698,7 @@ class HtmlTokenizer
                         $this->setState(self::$STATE_DATA);
                         break;
                     } else {
-                        $tokens[] = new HtmlCharToken($char);
+                        $this->emit(new HtmlCharToken($char), $tokens);
                         switch ($char) {
                             case "-":
                                 break;
@@ -738,7 +744,7 @@ class HtmlTokenizer
                             // Valid if peek returns null too. I think? TODO
                             $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                     }
-                    $tokens[] = new HtmlCharToken($tempBuffer);
+                    $this->emit(new HtmlCharToken($tempBuffer), $tokens);
                     break;
                 case self::$STATE_BEFORE_ATTRIBUTE_NAME:
                     $next = $buffer->peek();
@@ -759,7 +765,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read();
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             // TODO \0
@@ -791,7 +797,7 @@ class HtmlTokenizer
                             $this->setState(self::$STATE_BEFORE_ATTRIBUTE_VALUE);
                             break;
                         case ">":
-                            $tokens[] = $this->currentTokenBuilder->build();
+                            $this->emit($this->currentTokenBuilder->build(), $tokens);
                             $this->setState(self::$STATE_DATA);
                             break;
                         default: // This ought to be EOF only
@@ -821,7 +827,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read();
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             // TODO \0
@@ -906,7 +912,7 @@ class HtmlTokenizer
                             break;
                         case ">":
                             $this->setState(self::$STATE_DATA);
-                            $tokens[] = $this->currentTokenBuilder->build();
+                            $this->emit($this->currentTokenBuilder->build(), $tokens);
                             break;
                         // TODO CHAR REFERENCE STATE!!
                         default: // This ought to be EOF only
@@ -933,7 +939,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read();
-                                $tokens[] = $this->currentTokenBuilder->build();
+                                $this->emit($this->currentTokenBuilder->build(), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             // TODO \0
@@ -950,7 +956,8 @@ class HtmlTokenizer
                         $this->setState(self::$STATE_DATA);
                     } else {
                         if ($next == ">") {
-                            $tokens[] = $this->currentTokenBuilder->isSelfClosing(true)->build();
+                            $this->emit($this->currentTokenBuilder->isSelfClosing(true)->build(), $tokens);
+                            $buffer->read();
                             $this->setState(self::$STATE_DATA);
                         } else {
                             $errors[] = new ParseError();
@@ -961,7 +968,7 @@ class HtmlTokenizer
                 case self::$STATE_BOGUS_COMMENT:
                     $read = $buffer->consumeUntil(">", $eof);
                     $buffer->readOnly(">"); // consume and discard the >
-                    $tokens[] = new HtmlCommentToken($read);
+                    $this->emit(new HtmlCommentToken($read), $tokens);
                     $this->setState(self::$STATE_DATA);
                     break;
                 case self::$STATE_MARKUP_DECLARATION_OPEN:
@@ -987,7 +994,7 @@ class HtmlTokenizer
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
-                        $tokens[] = new HtmlCommentToken($this->comment);
+                        $this->emit(new HtmlCommentToken($this->comment), $tokens);
                         $this->setState(self::$STATE_DATA);
                     } else {
                         switch ($next) {
@@ -998,7 +1005,7 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read();
                                 $errors[] = new ParseError();
-                                $tokens[] = new HtmlCommentToken($this->comment);
+                                $this->emit(new HtmlCommentToken($this->comment), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             default:
@@ -1010,7 +1017,7 @@ class HtmlTokenizer
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
-                        $tokens[] = new HtmlCommentToken($this->comment);
+                        $this->emit(new HtmlCommentToken($this->comment), $tokens);
                         $this->setState(self::$STATE_DATA);
                     } else {
                         switch ($next) {
@@ -1021,7 +1028,7 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read();
                                 $errors[] = new ParseError();
-                                $tokens[] = new HtmlCommentToken($this->comment);
+                                $this->emit(new HtmlCommentToken($this->comment), $tokens);
                                 $this->setState(self::$STATE_DATA);
                                 break;
                             default:
@@ -1033,7 +1040,7 @@ class HtmlTokenizer
                     $this->comment .= $buffer->consumeUntil("-", $eof);
                     if ($eof) {
                         $errors[] = new ParseError();
-                        $tokens[] = new HtmlCommentToken($this->comment);
+                        $this->emit(new HtmlCommentToken($this->comment), $tokens);
                         $this->setState(self::$STATE_DATA);
                     } elseif ($buffer->peek() == "-") {
                         $this->setState(self::$STATE_COMMENT_END_DASH);
@@ -1043,7 +1050,7 @@ class HtmlTokenizer
                     $read = $buffer->read();
                     if ($read === null) {
                         $errors[] = new ParseError();
-                        $tokens[] = new HtmlCommentToken($this->comment);
+                        $this->emit(new HtmlCommentToken($this->comment), $tokens);
                         $this->setState(self::$STATE_DATA);
                     } else {
                         if ($read == "-") {
@@ -1062,11 +1069,11 @@ class HtmlTokenizer
                     $read = $buffer->read();
                     if ($read === null) {
                         $errors[] = new ParseError();
-                        $tokens[] = new HtmlCommentToken($this->comment);
+                        $this->emit(new HtmlCommentToken($this->comment), $tokens);
                         $this->setState(self::$STATE_DATA);
                     } else {
                         if ($read == ">") {
-                            $tokens[] = new HtmlCommentToken($this->comment);
+                            $this->emit(new HtmlCommentToken($this->comment), $tokens);
                             $this->setState(self::$STATE_DATA);
                         } elseif ($read == "\0") {
                             $errors[] = new ParseError();
@@ -1088,14 +1095,14 @@ class HtmlTokenizer
                     $read = $buffer->read();
                     if ($read === null) {
                         $errors[] = new ParseError();
-                        $tokens[] = new HtmlCommentToken($this->comment);
+                        $this->emit(new HtmlCommentToken($this->comment), $tokens);
                         $this->setState(self::$STATE_DATA);
                     } else {
                         if ($read == "-") {
                             $this->comment .= "--!";
                             $this->setState(self::$STATE_COMMENT_END_DASH);
                         } elseif ($read == ">") {
-                            $tokens[] = new HtmlCommentToken($this->comment);
+                            $this->emit(new HtmlCommentToken($this->comment), $tokens);
                             $this->setState(self::$STATE_DATA);
                         } elseif ($read == "\0") {
                             $errors[] = new ParseError();

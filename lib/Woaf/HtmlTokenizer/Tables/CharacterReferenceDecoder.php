@@ -90,7 +90,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         $this->parseErrorsLookup = array_flip(self::$parseErrorsValues);
         foreach (self::$mappings as $mapping) {
             $codepoint = substr($mapping[1], 2);
-            $this->lookup[hexdec(substr($mapping[0], 2))] = [mb_decode_numericentity("&#x" . $codepoint . ";", [ 0x0, 0xffff, 0, 0xffff ]), $codepoint, $mapping[2]];
+            $this->lookup[hexdec(substr($mapping[0], 2))] = [mb_decode_numericentity("&#x" . $codepoint . ";", [ 0x0, 0x10ffff, 0, 0x10ffff ]), $codepoint, $mapping[2]];
         }
         $this->buildNamedEntityLookup();
     }
@@ -112,7 +112,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             $number = $buffer->pConsume("[0-9]+");
             if ($number === "") {
                 if ($this->logger) $this->logger->debug("Failed to consume any decimal digits in decimal numeric char ref");
-                return ["&", $errors];
+                return ["&#", $errors];
             }
             $number = ltrim($number, "0");
             if ($this->logger) $this->logger->debug("Consumed decimal char ref $number");
@@ -128,7 +128,9 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         } else {
             if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
                 $errors[] = new ParseError();
-                return [$this->lookup[0], $errors];
+                $remapping = $this->lookup[0];
+                if ($this->logger) $this->logger->debug("Found reference $number in bad range, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
+                return [$remapping[0], $errors];
             }
             if (isset($this->parseErrorsLookup[$number])) {
                 if ($this->logger) $this->logger->debug("Found bad codepoint $number, using anyway");

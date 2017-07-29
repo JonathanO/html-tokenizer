@@ -30,4 +30,11 @@ class CharacterReferenceDecoderTest extends TestCase
         $decoded = $decoder->consumeCharRef(new HtmlStream("#x3ffff;", "UTF-8"));
         $this->assertEquals([json_decode('"\uD8BF\uDFFF"'), [new ParseError()]], $decoded);
     }
+
+    public function testJustAHash()
+    {
+        $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
+        $decoded = $decoder->consumeCharRef(new HtmlStream("#", "UTF-8"));
+        $this->assertEquals(['&#', []], $decoded);
+    }
 }

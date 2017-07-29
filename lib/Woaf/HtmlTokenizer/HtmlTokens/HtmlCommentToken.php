@@ -34,6 +34,9 @@ class HtmlCommentToken implements HtmlToken
         return $this->data;
     }
 
-
+    public function __toString()
+    {
+        return "<!--" . $this->getData() . "-->";
+    }
 
 }
