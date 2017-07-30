@@ -115,6 +115,9 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
                 return ["&#", $errors];
             }
             $number = ltrim($number, "0");
+            if ($number == "") {
+                $number = "0";
+            }
             if ($this->logger) $this->logger->debug("Consumed decimal char ref $number");
         }
         if (!$buffer->readOnly(";")) {

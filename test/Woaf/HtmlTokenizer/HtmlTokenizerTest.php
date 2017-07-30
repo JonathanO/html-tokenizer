@@ -10,6 +10,7 @@ namespace Woaf\HtmlTokenizer;
 
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
+use Monolog\Processor\IntrospectionProcessor;
 use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
@@ -19,7 +20,7 @@ class HtmlTokenizerTest extends TestCase
 {
     
     private function getTokenizer() {
-        return new HtmlTokenizer(new Logger("HtmlTokenizerTest", [new StreamHandler(STDOUT)]));
+        return new HtmlTokenizer(new Logger("HtmlTokenizerTest", [new StreamHandler(STDOUT)], [new IntrospectionProcessor()]));
     }
     
     public function testBasicElement() {
@@ -69,6 +70,24 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new HtmlStartTagToken("br", true, []),
         ], $tokens->getTokens());
+    }
+
+    private static function decodeString($string) {
+        return preg_replace_callback('/\\\u([0-9A-Fa-f]{4})/', function ($matches) { return self::mb_decode_entity("&#x" . $matches[1] . ";"); }, $string);
+    }
+
+    public function testNullInScriptHtmlComment() {
+        $parser = $this->getTokenizer();
+        $parser->pushState(HtmlTokenizer::$STATE_SCRIPT_DATA, null);
+        $tokens = $parser->parseText(self::decodeString('<!--test\u0000--><!--test-\u0000--><!--test--\u0000-->'));
+        $this->assertEquals([
+            new HtmlCharToken(self::decodeString('<!--test\uFFFD--><!--test-\uFFFD--><!--test--\uFFFD-->')),
+        ], $tokens->getTokens());
+        $this->assertEquals([
+            new ParseError(),
+            new ParseError(),
+            new ParseError()
+        ], $tokens->getErrors());
     }
 
 }

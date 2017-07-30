@@ -121,6 +121,16 @@ class Html5LibTest extends TestCase
                 return new ParseError();
             case "null-character-reference":
                 return new ParseError();
+            case "absence-of-digits-in-numeric-character-reference":
+                return new ParseError();
+            case "character-reference-outside-unicode-range":
+                return new ParseError();
+            case "surrogate-character-reference":
+                return new ParseError();
+            case "missing-whitespace-between-attributes":
+                return new ParseError();
+            case "eof-before-tag-name":
+                return new ParseError();
             default:
                 throw new \Exception("Unknown error type {$error->code}");
         }

@@ -18,6 +18,10 @@ use Woaf\HtmlTokenizer\ParseError;
 class CharacterReferenceDecoderTest extends TestCase
 {
 
+    private static function mb_decode_entity($entity) {
+        return mb_decode_numericentity($entity, [ 0x0, 0x10ffff, 0, 0x10ffff ]);
+    }
+
     public function testNotANamedEntity()
     {
         $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
@@ -36,5 +40,11 @@ class CharacterReferenceDecoderTest extends TestCase
         $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
         $decoded = $decoder->consumeCharRef(new HtmlStream("#", "UTF-8"));
         $this->assertEquals(['&#', []], $decoded);
+    }
+
+    public function testNull() {
+        $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
+        $decoded = $decoder->consumeCharRef(new HtmlStream("#0000;", "UTF-8"));
+        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [new ParseError()]], $decoded);
     }
 }

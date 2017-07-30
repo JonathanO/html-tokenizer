@@ -24,6 +24,7 @@ abstract class HtmlTagTokenBuilder
 
     public function addAttribute($name, $value) {
         $this->attributes[$name] = $value;
+        return $this;
     }
 
     public function isSelfClosing($isSelfClosing) {
@@ -34,6 +35,11 @@ abstract class HtmlTagTokenBuilder
     public function addAttributeName($name) {
         $this->lastAttribute = $name;
         $this->attributes[$name] = null;
+        return $this;
+    }
+
+    public function hasAttribute($name) {
+        return array_key_exists($name, $this->attributes);
     }
 
     public function addAttributeValue($value) {
@@ -41,6 +47,7 @@ abstract class HtmlTagTokenBuilder
             throw new \Exception("No open attribute!");
         }
         $this->attributes[$this->lastAttribute] = $value;
+        return $this;
     }
 
     abstract public function build();
