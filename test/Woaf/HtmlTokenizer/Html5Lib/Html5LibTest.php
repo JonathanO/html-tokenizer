@@ -12,6 +12,7 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\ParseError;
+use Woaf\HtmlTokenizer\Tables\State;
 
 /**
  * @backupGlobals disabled
@@ -142,10 +143,10 @@ class Html5LibTest extends TestCase
             throw new \Exception("Unable to convert state $stateName to our states");
         }
         $name = strtoupper("STATE_" . implode("_", $parts));
-        if (!property_exists('\Woaf\HtmlTokenizer\HtmlTokenizer', $name)) {
+        if (!property_exists('\Woaf\HtmlTokenizer\Tables\State', $name)) {
             throw new \Exception("Unable to convert state $stateName to our states");
         }
-        return HtmlTokenizer::$$name;
+        return State::$$name;
     }
 
     private function convertToken(array $arrtok, $doubleEscaped) {

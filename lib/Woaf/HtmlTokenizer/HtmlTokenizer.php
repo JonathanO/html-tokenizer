@@ -17,63 +17,13 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlToken;
 use Woaf\HtmlTokenizer\Tables\CharacterReferenceDecoder;
+use Woaf\HtmlTokenizer\Tables\State;
 
 class HtmlTokenizer
 {
     use LoggerAwareTrait;
 
     const WHITESPACE = [" ", "\n", "\t", "\f"];
-
-    public static $STATE_DATA = 1;
-    public static $STATE_RCDATA = 2;
-    public static $STATE_RAWTEXT = 3;
-    public static $STATE_SCRIPT_DATA = 4;
-    public static $STATE_PLAINTEXT = 5;
-    public static $STATE_RCDATA_LT_SIGN = 6;
-    public static $STATE_SCRIPT_DATA_LT_SIGN = 8;
-    public static $STATE_MARKUP_DECLARATION_OPEN = 9;
-    public static $STATE_END_TAG_OPEN = 10;
-    public static $STATE_BOGUS_COMMENT = 11;
-    public static $STATE_TAG_NAME = 12;
-    public static $STATE_BEFORE_ATTRIBUTE_NAME = 13;
-    public static $STATE_SELF_CLOSING_START_TAG = 14;
-    public static $STATE_RCDATA_END_TAG_OPEN = 15;
-    public static $STATE_TAG_OPEN = 16;
-    public static $STATE_RCDATA_END_TAG_NAME = 17;
-    public static $STATE_RAWTEXT_LT_SIGN = 18;
-    public static $STATE_RAWTEXT_END_TAG_OPEN = 19;
-    public static $STATE_RAWTEXT_END_TAG_NAME = 21;
-    public static $STATE_SCRIPT_DATA_END_TAG_OPEN = 23;
-    public static $STATE_SCRIPT_DATA_ESCAPE_START = 24;
-    public static $STATE_SCRIPT_DATA_END_TAG_NAME = 25;
-    public static $STATE_SCRIPT_DATA_ESCAPED_DASH_DASH = 26;
-    public static $STATE_SCRIPT_DATA_ESCAPED = 27;
-    public static $STATE_SCRIPT_DATA_ESCAPE_START_DASH = 28;
-    public static $STATE_SCRIPT_DATA_ESCAPED_DASH = 29;
-    public static $STATE_SCRIPT_DATA_ESCAPED_LT_SIGN = 30;
-    public static $STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN = 31;
-    public static $STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START = 32;
-    public static $STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME = 33;
-    public static $STATE_SCRIPT_DATA_DOUBLE_ESCAPED = 34;
-    public static $STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH = 35;
-    public static $STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN = 36;
-    public static $STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH = 37;
-    public static $STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END = 38;
-    public static $STATE_ATTRIBUTE_NAME = 39;
-    public static $STATE_AFTER_ATTRIBUTE_NAME = 40;
-    public static $STATE_BEFORE_ATTRIBUTE_VALUE = 41;
-    public static $STATE_ATTRIBUTE_VALUE_UNQUOTED = 42;
-    public static $STATE_ATTRIBUTE_VALUE_SINGLE_QUOTED = 43;
-    public static $STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED = 44;
-    public static $STATE_AFTER_ATTRIBUTE_VALUE_QUOTED = 45;
-    public static $STATE_COMMENT_START = 46;
-    public static $STATE_COMMENT_START_DASH = 47;
-    public static $STATE_COMMENT = 48;
-    public static $STATE_COMMENT_END = 49;
-    public static $STATE_COMMENT_END_DASH = 50;
-    public static $STATE_COMMENT_END_BANG = 52;
-    public static $STATE_DOCTYPE = 53;
-    public static $STATE_CDATA_SECTION = 54;
 
     private $FFFDReplacementCharacter;
 
@@ -111,7 +61,10 @@ class HtmlTokenizer
 
     private function setState($state) {
         if ($this->logger) {
-            $this->logger->debug("State change {$this->getState()} => {$state}");
+            $curState = $this->getState();
+            $curName = State::toName($curState);
+            $newName = State::toName($state);
+            $this->logger->debug("State change {$curName}({$curState}) => {$newName}({$state})");
         }
         $this->stack[0] = $state;
     }
@@ -136,7 +89,7 @@ class HtmlTokenizer
         $this->rawTextElements = array_flip(["script", "style"]);
         $this->escapableRawTextElements = array_flip(["textarea", "title"]);
         $this->foreignElements = array_flip(["svg", "mathml"]); // TODO: fix namespace usage
-        $this->stack[] = self::$STATE_DATA;
+        $this->stack[] = State::$STATE_DATA;
         $this->FFFDReplacementCharacter = mb_decode_numericentity("&#xFFFD;", [ 0x0, 0x10ffff, 0, 0x10ffff ]);
     }
 
@@ -191,10 +144,10 @@ class HtmlTokenizer
         );
     }
 
-    private function getEntityReplacer(&$errors, $buffer, $additionalAllowedChar = null)
+    private function getEntityReplacer(&$errors, $buffer, $additionalAllowedChar = null, $inAttribute = false)
     {
-        return function ($read, &$data) use (&$errors, $buffer, $additionalAllowedChar) {
-            list($decoded, $decodeErrors) = $this->entityReplacementTable->consumeCharRef($buffer, $additionalAllowedChar);
+        return function ($read, &$data) use (&$errors, $buffer, $additionalAllowedChar, $inAttribute) {
+            list($decoded, $decodeErrors) = $this->entityReplacementTable->consumeCharRef($buffer, $additionalAllowedChar, $inAttribute);
             $data .= $decoded;
             $errors = array_merge($errors, $decodeErrors);
             return true;
@@ -282,69 +235,69 @@ class HtmlTokenizer
         $done = false;
         while (!$done) {
             switch ($this->getState()) {
-                case self::$STATE_DATA:
-                    $this->consumeDataWithEntityReplacement($buffer, self::$STATE_TAG_OPEN, $errors, $tokens, false, $done);
+                case State::$STATE_DATA:
+                    $this->consumeDataWithEntityReplacement($buffer, State::$STATE_TAG_OPEN, $errors, $tokens, false, $done);
                     break;
-                case self::$STATE_RCDATA:
-                    $this->consumeDataWithEntityReplacement($buffer, self::$STATE_RCDATA_LT_SIGN, $errors, $tokens, true, $done);
+                case State::$STATE_RCDATA:
+                    $this->consumeDataWithEntityReplacement($buffer, State::$STATE_RCDATA_LT_SIGN, $errors, $tokens, true, $done);
                     break;
-                case self::$STATE_RAWTEXT:
-                    $this->consumeDataNoEntityReplacement($buffer, ["<" => [self::$STATE_RAWTEXT_LT_SIGN]], $errors, $tokens, $done);
+                case State::$STATE_RAWTEXT:
+                    $this->consumeDataNoEntityReplacement($buffer, ["<" => [State::$STATE_RAWTEXT_LT_SIGN]], $errors, $tokens, $done);
                     break;
-                case self::$STATE_SCRIPT_DATA:
-                    $this->consumeDataNoEntityReplacement($buffer, ["<" => [self::$STATE_SCRIPT_DATA_LT_SIGN]], $errors, $tokens, $done);
+                case State::$STATE_SCRIPT_DATA:
+                    $this->consumeDataNoEntityReplacement($buffer, ["<" => [State::$STATE_SCRIPT_DATA_LT_SIGN]], $errors, $tokens, $done);
                     break;
-                case self::$STATE_PLAINTEXT:
+                case State::$STATE_PLAINTEXT:
                     $this->consumeDataNoEntityReplacement($buffer, [], $errors, $tokens, $done);
                     break;
-                case self::$STATE_TAG_OPEN:
+                case State::$STATE_TAG_OPEN:
                     $next = $buffer->peek();
                     switch ($next) {
                         case "!":
                             $buffer->read();
-                            $this->setState(self::$STATE_MARKUP_DECLARATION_OPEN);
+                            $this->setState(State::$STATE_MARKUP_DECLARATION_OPEN);
                             break;
                         case "/":
                             $buffer->read();
-                            $this->setState(self::$STATE_END_TAG_OPEN);
+                            $this->setState(State::$STATE_END_TAG_OPEN);
                             break;
                         case "?":
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_BOGUS_COMMENT);
+                            $this->setState(State::$STATE_BOGUS_COMMENT);
                             break;
                         default:
                             if (preg_match("/[a-zA-Z]/u", $next)) {
                                 $this->currentTokenBuilder = HtmlStartTagToken::builder();
-                                $this->setState(self::$STATE_TAG_NAME);
+                                $this->setState(State::$STATE_TAG_NAME);
                             } else {
                                 $errors[] = new ParseError();
                                 $this->emit(new HtmlCharToken("<"), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                             }
                     }
                     break;
-                case self::$STATE_END_TAG_OPEN:
+                case State::$STATE_END_TAG_OPEN:
                     $next = $buffer->peek();
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder();
-                        $this->setState(self::$STATE_TAG_NAME);
+                        $this->setState(State::$STATE_TAG_NAME);
                     } else {
                         switch ($next) {
                             case ">":
                                 $errors[] = new ParseError();
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
                                 $errors[] = new ParseError();
-                                $this->setState(self::$STATE_BOGUS_COMMENT);
+                                $this->setState(State::$STATE_BOGUS_COMMENT);
                         }
                     }
                     break;
-                case self::$STATE_TAG_NAME:
+                case State::$STATE_TAG_NAME:
                     $setTagName = function($read, &$data) {
                         $this->currentTokenBuilder->setName($data);
                     };
-                    $beforeANameSwitcher = $this->getBasicStateSwitcher(self::$STATE_BEFORE_ATTRIBUTE_NAME, $setTagName);
+                    $beforeANameSwitcher = $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_NAME, $setTagName);
                     $toLowerCase = function($read, &$data) {
                         $data .= strtolower($read);
                         return true;
@@ -354,11 +307,11 @@ class HtmlTokenizer
                         "\n" => $beforeANameSwitcher,
                         "\f" => $beforeANameSwitcher,
                         " " => $beforeANameSwitcher,
-                        "/" => $this->getBasicStateSwitcher(self::$STATE_SELF_CLOSING_START_TAG, $setTagName),
+                        "/" => $this->getBasicStateSwitcher(State::$STATE_SELF_CLOSING_START_TAG, $setTagName),
                         ">" => function($read, &$data) use (&$tokens) {
                             $this->currentTokenBuilder->setName($data);
                             $this->emit($this->currentTokenBuilder->build(), $tokens);
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                             return false;
                         },
                         "\0" => $this->getNullReplacer($errors),
@@ -372,36 +325,36 @@ class HtmlTokenizer
                         function ($data) {
                             $this->addAttributeNameOrParseError($data, $errors);
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         }
                     );
                     break;
-                case self::$STATE_RCDATA_LT_SIGN:
+                case State::$STATE_RCDATA_LT_SIGN:
                     $next = $buffer->peek();
                     if ($next === "/") {
                         $buffer->read();
-                        $this->setState(self::$STATE_RCDATA_END_TAG_OPEN);
+                        $this->setState(State::$STATE_RCDATA_END_TAG_OPEN);
                     } else {
                         $this->emit(new HtmlCharToken("<"), $tokens);
-                        $this->setState(self::$STATE_RCDATA);
+                        $this->setState(State::$STATE_RCDATA);
                     }
                     break;
-                case self::$STATE_RCDATA_END_TAG_OPEN:
+                case State::$STATE_RCDATA_END_TAG_OPEN:
                     $next = $buffer->peek();
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder();
-                        $this->setState(self::$STATE_RCDATA_END_TAG_NAME);
+                        $this->setState(State::$STATE_RCDATA_END_TAG_NAME);
                     } else {
                         $this->emit(new HtmlCharToken("</"), $tokens);
-                        $this->setState(self::$STATE_RCDATA);
+                        $this->setState(State::$STATE_RCDATA);
                     }
                     break;
-                case self::$STATE_RCDATA_END_TAG_NAME:
+                case State::$STATE_RCDATA_END_TAG_NAME:
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                        $this->setState(self::$STATE_RCDATA);
+                        $this->setState(State::$STATE_RCDATA);
                     } else {
                         switch ($buffer->peek()) {
                             case " ":
@@ -410,52 +363,52 @@ class HtmlTokenizer
                             case "\f":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
                                 $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                                $this->setState(self::$STATE_RCDATA);
+                                $this->setState(State::$STATE_RCDATA);
                         }
                     }
                     break;
-                case self::$STATE_RAWTEXT_LT_SIGN:
+                case State::$STATE_RAWTEXT_LT_SIGN:
                     $next = $buffer->peek();
                     if ($next === "/") {
                         $buffer->read();
-                        $this->setState(self::$STATE_RAWTEXT_END_TAG_OPEN);
+                        $this->setState(State::$STATE_RAWTEXT_END_TAG_OPEN);
                     } else {
                         $this->emit(new HtmlCharToken("<"), $tokens);
-                        $this->setState(self::$STATE_RAWTEXT);
+                        $this->setState(State::$STATE_RAWTEXT);
                     }
                     break;
-                case self::$STATE_RAWTEXT_END_TAG_OPEN:
+                case State::$STATE_RAWTEXT_END_TAG_OPEN:
                     $next = $buffer->peek();
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder();
-                        $this->setState(self::$STATE_RAWTEXT_END_TAG_NAME);
+                        $this->setState(State::$STATE_RAWTEXT_END_TAG_NAME);
                     } else {
                         $this->emit(new HtmlCharToken("</"), $tokens);
-                        $this->setState(self::$STATE_RAWTEXT);
+                        $this->setState(State::$STATE_RAWTEXT);
                     }
                     break;
-                case self::$STATE_RAWTEXT_END_TAG_NAME:
+                case State::$STATE_RAWTEXT_END_TAG_NAME:
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                        $this->setState(self::$STATE_RAWTEXT);
+                        $this->setState(State::$STATE_RAWTEXT);
                     } else {
                         switch ($buffer->peek()) {
                             case " ":
@@ -464,56 +417,56 @@ class HtmlTokenizer
                             case "\f":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
                                 $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                                $this->setState(self::$STATE_RAWTEXT);
+                                $this->setState(State::$STATE_RAWTEXT);
                         }
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_LT_SIGN:
+                case State::$STATE_SCRIPT_DATA_LT_SIGN:
                     $next = $buffer->peek();
                     if ($next === "/") {
                         $buffer->read();
-                        $this->setState(self::$STATE_SCRIPT_DATA_END_TAG_OPEN);
+                        $this->setState(State::$STATE_SCRIPT_DATA_END_TAG_OPEN);
                     } elseif ($next === "!") {
                         $buffer->read();
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPE_START);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPE_START);
                         $this->emit(new HtmlCharToken("<!"), $tokens);
                     } else {
                         $this->emit(new HtmlCharToken("<"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA);
+                        $this->setState(State::$STATE_SCRIPT_DATA);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_END_TAG_OPEN:
+                case State::$STATE_SCRIPT_DATA_END_TAG_OPEN:
                     $next = $buffer->peek();
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder()();
-                        $this->setState(self::$STATE_SCRIPT_DATA_END_TAG_NAME);
+                        $this->setState(State::$STATE_SCRIPT_DATA_END_TAG_NAME);
                     } else {
                         $this->emit(new HtmlCharToken("</"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA);
+                        $this->setState(State::$STATE_SCRIPT_DATA);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_END_TAG_NAME:
+                case State::$STATE_SCRIPT_DATA_END_TAG_NAME:
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA);
+                        $this->setState(State::$STATE_SCRIPT_DATA);
                     } else {
                         switch ($buffer->peek()) {
                             case " ":
@@ -522,48 +475,48 @@ class HtmlTokenizer
                             case "\f":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->currentTokenBuilder->setName($name);
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
                                 $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                                $this->setState(self::$STATE_SCRIPT_DATA);
+                                $this->setState(State::$STATE_SCRIPT_DATA);
                         }
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPE_START:
+                case State::$STATE_SCRIPT_DATA_ESCAPE_START:
                     if ($buffer->readOnly("-") == "-") {
                         $this->emit(new HtmlCharToken("-"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPE_START_DASH);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPE_START_DASH);
                     } else {
-                        $this->setState(self::$STATE_SCRIPT_DATA);
+                        $this->setState(State::$STATE_SCRIPT_DATA);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPE_START_DASH:
+                case State::$STATE_SCRIPT_DATA_ESCAPE_START_DASH:
                     if ($buffer->readOnly("-") == "-") {
                         $this->emit(new HtmlCharToken("-"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
                     } else {
-                        $this->setState(self::$STATE_SCRIPT_DATA);
+                        $this->setState(State::$STATE_SCRIPT_DATA);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPED:
+                case State::$STATE_SCRIPT_DATA_ESCAPED:
                     $this->consumeDataNoEntityReplacement(
                                 $buffer,
                                 [
-                                    "<" => [self::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN],
-                                    "-" => [self::$STATE_SCRIPT_DATA_ESCAPED_DASH, true],
+                                    "<" => [State::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN],
+                                    "-" => [State::$STATE_SCRIPT_DATA_ESCAPED_DASH, true],
                                 ],
                                 $errors,
                                 $tokens,
@@ -571,29 +524,29 @@ class HtmlTokenizer
                     );
                     if ($eof) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPED_DASH:
+                case State::$STATE_SCRIPT_DATA_ESCAPED_DASH:
                     switch ($buffer->peek()) {
                         case "-":
                             $buffer->read();
                             $this->emit(new HtmlCharToken("-"), $tokens);
-                            $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
+                            $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
                             break;
                         case "<":
                             $buffer->read();
-                            $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN);
+                            $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN);
                             break;
                         case null:
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                             break;
                         default:
-                            $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                            $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH:
+                case State::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH:
                     switch ($buffer->peek()) {
                         case "-":
                             $buffer->read();
@@ -601,50 +554,50 @@ class HtmlTokenizer
                             break;
                         case "<":
                             $buffer->read();
-                            $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN);
+                            $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN);
                             break;
                         case ">":
                             $buffer->read();
                             $this->emit(new HtmlCharToken(">"), $tokens);
-                            $this->setState(self::$STATE_SCRIPT_DATA);
+                            $this->setState(State::$STATE_SCRIPT_DATA);
                             break;
                         case null:
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                             break;
                         default:
-                            $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                            $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN:
+                case State::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN:
                     $next = $buffer->peek();
                     if ($next === "/") {
                         $buffer->read();
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN);
                     } else if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->emit(new HtmlCharToken("<"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START);
+                        $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START);
                     } else {
                         $this->emit(new HtmlCharToken("<"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
+                case State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
                     $next = $buffer->peek();
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder()();
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME);
                     } else {
                         $this->emit(new HtmlCharToken("</"), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME:
+                case State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME:
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                        $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                        $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     } else {
                         switch ($buffer->peek()) {
                             case " ":
@@ -652,25 +605,25 @@ class HtmlTokenizer
                             case "\n":
                             case "\f":
                                 $buffer->read();
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
                                 $buffer->read();
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
                                 // Valid if peek returns null too. I think? TODO
                                 $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
-                                $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                         }
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START:
+                case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START:
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     switch ($buffer->peek()) {
                         case " ":
@@ -681,24 +634,24 @@ class HtmlTokenizer
                         case ">":
                             $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                             if ($name == "script") {
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                             } else {
-                                $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                             }
                             $tempBuffer .= $buffer->read();
                             break;
                         default:
                             // Valid if peek returns null too. I think? TODO
-                            $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                            $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     }
                     $this->emit(new HtmlCharToken($tempBuffer), $tokens);
                     break;
-                case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED:
+                case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED:
                     $this->consumeDataNoEntityReplacement(
                         $buffer,
                         [
-                            "<" => [self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN],
-                            "-" => [self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH, true],
+                            "<" => [State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN],
+                            "-" => [State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH, true],
                         ],
                         $errors,
                         $tokens,
@@ -706,14 +659,14 @@ class HtmlTokenizer
                     );
                     if ($eof) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH:
+                case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH:
                     $char = $buffer->read();
                     if ($char == null) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                         break;
                     } else {
                         if ($char == "\0") {
@@ -724,21 +677,21 @@ class HtmlTokenizer
                         }
                         switch ($char) {
                             case "-":
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH);
                                 break;
                             case "<":
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN);
                                 break;
                             default:
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                         }
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH:
+                case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH:
                     $char = $buffer->read();
                     if ($char == null) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                         break;
                     } else {
                         if ($char == "\0") {
@@ -751,26 +704,26 @@ class HtmlTokenizer
                             case "-":
                                 break;
                             case "<":
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN);
                                 break;
                             case ">":
-                                $this->setState(self::$STATE_SCRIPT_DATA);
+                                $this->setState(State::$STATE_SCRIPT_DATA);
                                 break;
                             default:
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                         }
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN:
+                case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN:
                     $next = $buffer->peek();
                     if ($next === "/") {
                         $buffer->read();
-                        $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END);
+                        $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END);
                     } else {
-                        $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                        $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                     }
                     break;
-                case self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END:
+                case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END:
                     $tempBuffer = $buffer->pConsume("[a-zA-Z]+");
                     switch ($buffer->peek()) {
                         case " ":
@@ -781,23 +734,23 @@ class HtmlTokenizer
                         case ">":
                             $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                             if ($name == "script") {
-                                $this->setState(self::$STATE_SCRIPT_DATA_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                             } else {
-                                $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                                $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                             }
                             $tempBuffer .= $buffer->read();
                             break;
                         default:
                             // Valid if peek returns null too. I think? TODO
-                            $this->setState(self::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                            $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                     }
                     $this->emit(new HtmlCharToken($tempBuffer), $tokens);
                     break;
-                case self::$STATE_BEFORE_ATTRIBUTE_NAME:
+                case State::$STATE_BEFORE_ATTRIBUTE_NAME:
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         switch ($next) {
                             case "\t":
@@ -808,12 +761,12 @@ class HtmlTokenizer
                                 break;
                             case "/":
                                 $buffer->read();
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             case "\"":
                             case "'":
@@ -822,15 +775,15 @@ class HtmlTokenizer
                                 $errors[] = new ParseError();
                             default:
                                 // We let the attr name state handle the \0 case
-                                $this->setState(self::$STATE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_ATTRIBUTE_NAME);
                         }
                     }
                     break;
-                case self::$STATE_ATTRIBUTE_NAME:
+                case State::$STATE_ATTRIBUTE_NAME:
                     $addAttributeName = function($read, &$data) {
                         $this->addAttributeNameOrParseError($data, $errors);
                     };
-                    $afterANameSwitcher = $this->getBasicStateSwitcher(self::$STATE_AFTER_ATTRIBUTE_NAME, $addAttributeName);
+                    $afterANameSwitcher = $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_NAME, $addAttributeName);
                     $toLowerCase = function($read, &$data) {
                         $data .= strtolower($read);
                         return true;
@@ -840,12 +793,12 @@ class HtmlTokenizer
                         "\n" => $afterANameSwitcher,
                         "\f" => $afterANameSwitcher,
                         " " => $afterANameSwitcher,
-                        "/" => $this->getBasicStateSwitcher(self::$STATE_SELF_CLOSING_START_TAG, $addAttributeName),
-                        "=" => $this->getBasicStateSwitcher(self::$STATE_BEFORE_ATTRIBUTE_VALUE, $addAttributeName),
+                        "/" => $this->getBasicStateSwitcher(State::$STATE_SELF_CLOSING_START_TAG, $addAttributeName),
+                        "=" => $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_VALUE, $addAttributeName),
                         ">" => function($read, &$data) use (&$tokens) {
                             $this->addAttributeNameOrParseError($data, $errors);
                             $this->emit($this->currentTokenBuilder->build(), $tokens);
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                             return false;
                         },
                         "\0" => $this->getNullReplacer($errors),
@@ -859,14 +812,14 @@ class HtmlTokenizer
                         function ($data) {
                             $this->addAttributeNameOrParseError($data, $errors);
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         }
                     );
                     break;
-                case self::$STATE_AFTER_ATTRIBUTE_NAME:
+                case State::$STATE_AFTER_ATTRIBUTE_NAME:
                     $next = $buffer->peek();
                     if ($next == null) {
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         switch ($next) {
                             case "\t":
@@ -877,31 +830,31 @@ class HtmlTokenizer
                                 break;
                             case "/":
                                 $buffer->read();
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case "=":
                                 $buffer->read();
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_VALUE);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_VALUE);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             case "\"":
                             case "'":
                             case "<":
                                 $errors[] = new ParseError();
                             default:
-                                $this->setState(self::$STATE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_ATTRIBUTE_NAME);
                         }
                     }
                     break;
-                case self::$STATE_BEFORE_ATTRIBUTE_VALUE:
+                case State::$STATE_BEFORE_ATTRIBUTE_VALUE:
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         switch ($next) {
                             case "\t":
@@ -912,58 +865,58 @@ class HtmlTokenizer
                                 break;
                             case "\"":
                                 $buffer->read();
-                                $this->setState(self::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED);
+                                $this->setState(State::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED);
                                 break;
                             case "'":
                                 $buffer->read();
-                                $this->setState(self::$STATE_ATTRIBUTE_VALUE_SINGLE_QUOTED);
+                                $this->setState(State::$STATE_ATTRIBUTE_VALUE_SINGLE_QUOTED);
                                 break;
                             case "<":
                             case "=":
                             case "`":
                                 $errors[] = new ParseError();
                             default:
-                                $this->setState(self::$STATE_ATTRIBUTE_VALUE_UNQUOTED);
+                                $this->setState(State::$STATE_ATTRIBUTE_VALUE_UNQUOTED);
                         }
                     }
                     break;
-                case self::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED:
+                case State::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED:
                     $this->consume(
                         $buffer,
                         $actions = [
-                            "\"" => $this->getBasicStateSwitcher(self::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
+                            "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
                                 $this->currentTokenBuilder->addAttributeValue($data);
                             }),
-                            "&" => $this->getEntityReplacer($errors, $buffer),
+                            "&" => $this->getEntityReplacer($errors, $buffer, null, true),
                             "\0" => $this->getNullReplacer($errors),
                         ],
                         function ($data) {
                             $this->currentTokenBuilder->addAttributeValue($data);
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         }
                     );
                     break;
-                case self::$STATE_ATTRIBUTE_VALUE_SINGLE_QUOTED:
+                case State::$STATE_ATTRIBUTE_VALUE_SINGLE_QUOTED:
                     $this->consume(
                         $buffer,
                         $actions = [
-                            "'" => $this->getBasicStateSwitcher(self::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
+                            "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
                                 $this->currentTokenBuilder->addAttributeValue($data);
                             }),
-                            "&" => $this->getEntityReplacer($errors, $buffer),
+                            "&" => $this->getEntityReplacer($errors, $buffer, null, true),
                             "\0" => $this->getNullReplacer($errors),
                         ],
                         function ($data) {
                             $this->currentTokenBuilder->addAttributeValue($data);
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         }
                     );
                     break;
-                case self::$STATE_ATTRIBUTE_VALUE_UNQUOTED:
+                case State::$STATE_ATTRIBUTE_VALUE_UNQUOTED:
 
-                    $switchBeforeAttrName = $this->getBasicStateSwitcher(self::$STATE_BEFORE_ATTRIBUTE_NAME, function($read, &$data) {
+                    $switchBeforeAttrName = $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_NAME, function($read, &$data) {
                         $this->currentTokenBuilder->addAttributeValue($data);
                     });
 
@@ -976,8 +929,8 @@ class HtmlTokenizer
                             "\n" => $switchBeforeAttrName,
                             "\f" => $switchBeforeAttrName,
                             " " => $switchBeforeAttrName,
-                            "&" => $this->getEntityReplacer($errors, $buffer, ">"),
-                            ">" => $this->getBasicStateSwitcher(self::$STATE_DATA,
+                            "&" => $this->getEntityReplacer($errors, $buffer, ">", true),
+                            ">" => $this->getBasicStateSwitcher(State::$STATE_DATA,
                                 function($read, &$data) use (&$tokens) {
                                     $this->currentTokenBuilder->addAttributeValue($data);
                                     $this->emit($this->currentTokenBuilder->build(), $tokens);
@@ -992,14 +945,14 @@ class HtmlTokenizer
                         function ($data) {
                             $this->currentTokenBuilder->addAttributeValue($data);
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         }
                     );
                     break;
-                case self::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED:
+                case State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED:
                     $next = $buffer->peek();
                     if ($next == null) {
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         switch ($next) {
                             case "\t":
@@ -1007,189 +960,190 @@ class HtmlTokenizer
                             case "\f":
                             case " ":
                                 $buffer->read();
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
                                 $buffer->read();
-                                $this->setState(self::$STATE_SELF_CLOSING_START_TAG);
+                                $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $this->emit($this->currentTokenBuilder->build(), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
                                 $errors[] = new ParseError();
-                                $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                                $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                         }
                     }
                     break;
-                case self::$STATE_SELF_CLOSING_START_TAG:
+                case State::$STATE_SELF_CLOSING_START_TAG:
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         if ($next == ">") {
                             $this->emit($this->currentTokenBuilder->isSelfClosing(true)->build(), $tokens);
                             $buffer->read();
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         } else {
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_BEFORE_ATTRIBUTE_NAME);
+                            $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                         }
                     }
                     break;
-                case self::$STATE_BOGUS_COMMENT:
+                case State::$STATE_BOGUS_COMMENT:
                     $read = $buffer->consumeUntil(">", $eof);
                     $buffer->readOnly(">"); // consume and discard the >
                     $this->emit(new HtmlCommentToken($read), $tokens);
-                    $this->setState(self::$STATE_DATA);
+                    $this->setState(State::$STATE_DATA);
                     break;
-                case self::$STATE_MARKUP_DECLARATION_OPEN:
+                case State::$STATE_MARKUP_DECLARATION_OPEN:
                     if ($buffer->peek(2) == "--") {
                         $buffer->read(2);
                         $this->comment = "";
-                        $this->setState(self::$STATE_COMMENT_START);
+                        $this->setState(State::$STATE_COMMENT_START);
                     } else {
                         $peeked = $buffer->peek(7);
                         if (strtoupper($peeked) == "DOCTYPE") {
                             $buffer->read(7);
-                            $this->setState(self::$STATE_DOCTYPE);
+                            $this->setState(State::$STATE_DOCTYPE);
                         } elseif ($peeked == "[CDATA[") {// TODO check stack!
                             $buffer->read(7);
-                            $this->setState(self::$STATE_CDATA_SECTION);
+                            $this->setState(State::$STATE_CDATA_SECTION);
                         } else {
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_BOGUS_COMMENT);
+                            $this->setState(State::$STATE_BOGUS_COMMENT);
                         }
                     }
                     break;
-                case self::$STATE_COMMENT_START:
+                case State::$STATE_COMMENT_START:
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
                         $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         switch ($next) {
                             case "-":
                                 $buffer->read();
-                                $this->setState(self::$STATE_COMMENT_START_DASH);
+                                $this->setState(State::$STATE_COMMENT_START_DASH);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $errors[] = new ParseError();
                                 $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
-                                $this->setState(self::$STATE_COMMENT);
+                                $this->setState(State::$STATE_COMMENT);
                         }
                     }
                     break;
-                case self::$STATE_COMMENT_START_DASH:
+                case State::$STATE_COMMENT_START_DASH:
                     $next = $buffer->peek();
                     if ($next == null) {
                         $errors[] = new ParseError();
                         $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         switch ($next) {
                             case "-":
                                 $buffer->read();
-                                $this->setState(self::$STATE_COMMENT_END);
+                                $this->setState(State::$STATE_COMMENT_END);
                                 break;
                             case ">":
                                 $buffer->read();
                                 $errors[] = new ParseError();
                                 $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                                $this->setState(self::$STATE_DATA);
+                                $this->setState(State::$STATE_DATA);
                                 break;
                             default:
-                                $this->setState(self::$STATE_COMMENT);
+                                $this->comment .= "-";
+                                $this->setState(State::$STATE_COMMENT);
                         }
                     }
                     break;
-                case self::$STATE_COMMENT:
+                case State::$STATE_COMMENT:
                     $this->consume($buffer,
                         [
-                            "-" => $this->getBasicStateSwitcher(self::$STATE_COMMENT_END_DASH, function($read, &$data) { $this->comment .= $data; }),
+                            "-" => $this->getBasicStateSwitcher(State::$STATE_COMMENT_END_DASH, function($read, &$data) { $this->comment .= $data; }),
                             "\0" => $this->getNullReplacer($errors)
                         ],
                         function ($data) use (&$tokens, &$errors) {
                             $this->comment .= $data;
                             $errors[] = new ParseError();
                             $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         }
                     );
                     break;
-                case self::$STATE_COMMENT_END_DASH:
+                case State::$STATE_COMMENT_END_DASH:
                     $read = $buffer->read();
                     if ($read === null) {
                         $errors[] = new ParseError();
                         $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         if ($read == "-") {
-                            $this->setState(self::$STATE_COMMENT_END);
+                            $this->setState(State::$STATE_COMMENT_END);
                         } elseif ($read == "\0") {
                             $errors[] = new ParseError();
                             $this->comment .= "-" . $this->FFFDReplacementCharacter;
-                            $this->setState(self::$STATE_COMMENT);
+                            $this->setState(State::$STATE_COMMENT);
                         } else {
                             $this->comment .= "-";
-                            $this->setState(self::$STATE_COMMENT);
+                            $this->setState(State::$STATE_COMMENT);
                         }
                     }
                     break;
-                case self::$STATE_COMMENT_END:
+                case State::$STATE_COMMENT_END:
                     $read = $buffer->read();
                     if ($read === null) {
                         $errors[] = new ParseError();
                         $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         if ($read == ">") {
                             $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         } elseif ($read == "\0") {
                             $errors[] = new ParseError();
                             $this->comment .= "--" . $this->FFFDReplacementCharacter;
-                            $this->setState(self::$STATE_COMMENT);
+                            $this->setState(State::$STATE_COMMENT);
                         } elseif ($read == "!") {
                             $errors[] = new ParseError();
-                            $this->setState(self::$STATE_COMMENT_END_BANG);
+                            $this->setState(State::$STATE_COMMENT_END_BANG);
                         } elseif ($read == "-") {
                             $errors[] = new ParseError();
                             $this->comment .= "-";
                         } else {
                             $this->comment .= "--" . $read;
-                            $this->setState(self::$STATE_COMMENT);
+                            $this->setState(State::$STATE_COMMENT);
                         }
                     }
                     break;
-                case self::$STATE_COMMENT_END_BANG:
+                case State::$STATE_COMMENT_END_BANG:
                     $read = $buffer->read();
                     if ($read === null) {
                         $errors[] = new ParseError();
                         $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                        $this->setState(self::$STATE_DATA);
+                        $this->setState(State::$STATE_DATA);
                     } else {
                         if ($read == "-") {
                             $this->comment .= "--!";
-                            $this->setState(self::$STATE_COMMENT_END_DASH);
+                            $this->setState(State::$STATE_COMMENT_END_DASH);
                         } elseif ($read == ">") {
                             $this->emit(new HtmlCommentToken($this->comment), $tokens);
-                            $this->setState(self::$STATE_DATA);
+                            $this->setState(State::$STATE_DATA);
                         } elseif ($read == "\0") {
                             $errors[] = new ParseError();
                             $this->comment .= "--!" . $this->FFFDReplacementCharacter;
-                            $this->setState(self::$STATE_COMMENT);
+                            $this->setState(State::$STATE_COMMENT);
                         } else {
                             $this->comment .= "--!" . $read;
-                            $this->setState(self::$STATE_COMMENT);
+                            $this->setState(State::$STATE_COMMENT);
                         }
                     }
                     break;

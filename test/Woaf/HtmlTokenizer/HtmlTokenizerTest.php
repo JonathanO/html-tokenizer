@@ -13,8 +13,10 @@ use Monolog\Logger;
 use Monolog\Processor\IntrospectionProcessor;
 use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
+use Woaf\HtmlTokenizer\Tables\State;
 
 class HtmlTokenizerTest extends TestCase
 {
@@ -57,7 +59,7 @@ class HtmlTokenizerTest extends TestCase
 
     public function testNullInRCDATA() {
         $tokenizer = $this->getTokenizer();
-        $tokenizer->pushState(HtmlTokenizer::$STATE_RCDATA, null);
+        $tokenizer->pushState(State::$STATE_RCDATA, null);
         $tokens = $tokenizer->parseText(self::mb_decode_entity("&#x0000;"));
         $this->assertEquals([
             new HtmlCharToken(json_decode('"\uFFFD"')),
@@ -78,7 +80,7 @@ class HtmlTokenizerTest extends TestCase
 
     public function testNullInScriptHtmlComment() {
         $parser = $this->getTokenizer();
-        $parser->pushState(HtmlTokenizer::$STATE_SCRIPT_DATA, null);
+        $parser->pushState(State::$STATE_SCRIPT_DATA, null);
         $tokens = $parser->parseText(self::decodeString('<!--test\u0000--><!--test-\u0000--><!--test--\u0000-->'));
         $this->assertEquals([
             new HtmlCharToken(self::decodeString('<!--test\uFFFD--><!--test-\uFFFD--><!--test--\uFFFD-->')),
@@ -90,4 +92,15 @@ class HtmlTokenizerTest extends TestCase
         ], $tokens->getErrors());
     }
 
+    public function testUnfinishedCommentSigh()
+    {
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText(self::decodeString('<!---<'));
+        $this->assertEquals([
+            new HtmlCommentToken("-<")
+        ], $tokens->getTokens());
+        $this->assertEquals([
+            new ParseError()
+        ], $tokens->getErrors());
+    }
 }

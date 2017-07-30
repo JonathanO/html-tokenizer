@@ -156,11 +156,12 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         }
     }
 
-    public function consumeNamedEntity(HtmlStream $buffer) {
+    public function consumeNamedEntity(HtmlStream $buffer, $inAttribute) {
         $errors = [];
         $cur = $this->namedEntitiyLookup;
         $candidate = null;
         $lastWasSemicolon = false;
+        $start = $buffer->save();
         $buffer->mark();
         $consumed = 0;
         for ($chr = $buffer->peek(); $chr != null && isset($cur[0][$chr]); $chr = $buffer->peek()) {
@@ -176,7 +177,18 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         $buffer->reset(); // Unconsume non-matched chars
         if ($candidate != null) {
             if (!$lastWasSemicolon) {
-                $errors[] = new ParseError();
+                if ($inAttribute) {
+                    $next = $buffer->peek();
+                    if ($next == "=" || preg_match('/[A-Za-z0-9]/', $next)) {
+                        if ($next == "=") {
+                            $errors[] = new ParseError();
+                        }
+                        $buffer->load($start); // Unconsume everything. Sigh.
+                        return ["&", $errors];
+                    }
+                } else {
+                    $errors[] = new ParseError();
+                }
             }
             return [$candidate->characters, $errors];
         } else {
@@ -191,7 +203,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         }
     }
 
-    public function consumeCharRef(HtmlStream $buffer, $additionalAllowedChar = null) {
+    public function consumeCharRef(HtmlStream $buffer, $additionalAllowedChar = null, $inAttribute = false) {
         $peeked = $buffer->peek();
         if ($peeked === null) {
             return ["&", []];
@@ -210,7 +222,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             case "#":
                 return $this->consumeNumericEntity($buffer);
             default:
-                return $this->consumeNamedEntity($buffer);
+                return $this->consumeNamedEntity($buffer, $inAttribute);
         }
     }
 

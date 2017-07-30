@@ -30,6 +30,14 @@ class HtmlStream
         $this->curBytes = $this->markCurBytes;
     }
 
+    public function save() {
+        return [$this->cur, $this->curBytes];
+    }
+
+    public function load($save) {
+        list($this->cur, $this->curBytes) = $save;
+    }
+
     private function preProcessBuffer($buf)
     {
         $enc = mb_regex_encoding();
