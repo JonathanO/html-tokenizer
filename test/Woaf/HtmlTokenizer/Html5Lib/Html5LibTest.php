@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlTokenizer;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\ParseError;
@@ -132,6 +133,8 @@ class Html5LibTest extends TestCase
                 return new ParseError();
             case "eof-before-tag-name":
                 return new ParseError();
+            case "eof-in-cdata":
+                return new ParseError();
             default:
                 throw new \Exception("Unknown error type {$error->code}");
         }
@@ -159,6 +162,8 @@ class Html5LibTest extends TestCase
                 return new HtmlEndTagToken($arrtok[1], false, []);
             case "StartTag":
                 return new HtmlStartTagToken($arrtok[1], isset($arrtok[3]) ? $arrtok[3] : false, (array)$arrtok[2]);
+            case "DOCTYPE":
+                return new HtmlDocTypeToken($arrtok[1], $arrtok[2], $arrtok[3], $arrtok[4]);
             default:
                 throw new \Exception("Unknown token type {$arrtok[0]}");
         }

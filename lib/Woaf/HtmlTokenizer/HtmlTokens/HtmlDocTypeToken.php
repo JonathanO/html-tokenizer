@@ -11,7 +11,7 @@ namespace Woaf\HtmlTokenizer\HtmlTokens;
 
 use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlDocTypeTokenBuilder;
 
-class HtmlDocTypeToken
+class HtmlDocTypeToken implements HtmlToken
 {
     /**
      * @var string
@@ -82,6 +82,10 @@ class HtmlDocTypeToken
 
     public static function builder() {
         return new HtmlDocTypeTokenBuilder();
+    }
+
+    public function __toString() {
+        return "<!--DOCTYPE {$this->name}";
     }
 
 }
