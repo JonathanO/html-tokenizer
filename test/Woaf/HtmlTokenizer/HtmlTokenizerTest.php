@@ -17,6 +17,7 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
+use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
 
 class HtmlTokenizerTest extends TestCase
@@ -87,9 +88,9 @@ class HtmlTokenizerTest extends TestCase
             new HtmlCharToken(self::decodeString('<!--test\uFFFD--><!--test-\uFFFD--><!--test--\uFFFD-->')),
         ], $tokens->getTokens());
         $this->assertEquals([
-            new ParseError(),
-            new ParseError(),
-            new ParseError()
+            ParseErrors::getUnexpectedNullCharacter(),
+            ParseErrors::getUnexpectedNullCharacter(),
+            ParseErrors::getUnexpectedNullCharacter(),
         ], $tokens->getErrors());
     }
 
@@ -101,7 +102,7 @@ class HtmlTokenizerTest extends TestCase
             new HtmlCommentToken("-<")
         ], $tokens->getTokens());
         $this->assertEquals([
-            new ParseError()
+            ParseErrors::getEofInComment(),
         ], $tokens->getErrors());
     }
 
@@ -113,7 +114,7 @@ class HtmlTokenizerTest extends TestCase
             new HtmlCommentToken(" A")
         ], $tokens->getTokens());
         $this->assertEquals([
-            new ParseError()
+            ParseErrors::getEofInComment(),
         ], $tokens->getErrors());
     }
 
@@ -125,6 +126,16 @@ class HtmlTokenizerTest extends TestCase
             new HtmlDocTypeToken("html",'-//W3C//DTD HTML Transitional 4.01//EN', null, false)
         ], $tokens->getTokens());
         $this->assertEquals([], $tokens->getErrors());
+    }
+
+    public function testSingleCharUnterminatedDoctype()
+    {
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText('<!DOCTYPE ?');
+        $this->assertEquals([
+            new HtmlDocTypeToken('?',null, null, true)
+        ], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getEofInDoctype()], $tokens->getErrors());
     }
 
     public function testDoctypeOnlySystemId()

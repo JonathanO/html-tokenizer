@@ -5,6 +5,7 @@ use FilesystemIterator;
 use GlobIterator;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
+use Monolog\Processor\IntrospectionProcessor;
 use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlTokenizer;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
@@ -12,7 +13,7 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
-use Woaf\HtmlTokenizer\ParseError;
+use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
 
 /**
@@ -71,7 +72,7 @@ class Html5LibTest extends TestCase
         }
 
         // , last tag state
-        $tokenizer = new HtmlTokenizer(new Logger("html5libtest", [new StreamHandler(STDOUT)]));
+        $tokenizer = new HtmlTokenizer(new Logger("html5libtest", [new StreamHandler(STDOUT)], [new IntrospectionProcessor()]));
         $lastStartTagName = null;
         if (isset($test->lastStartTag)) {
             $lastStartTagName = $test->lastStartTag;
@@ -85,75 +86,8 @@ class Html5LibTest extends TestCase
     }
 
     private function convertError($error) {
-        // TODO code, line, col
-        switch ($error->code) {
-            case "eof-in-tag":
-                return new ParseError();
-            case "control-character-reference":
-                return new ParseError();
-            case "missing-semicolon-after-character-reference":
-                return new ParseError();
-            case "eof-in-script-html-comment-like-text":
-                return new ParseError();
-            case "abrupt-closing-of-empty-comment":
-                return new ParseError();
-            case "unexpected-question-mark-instead-of-tag-name":
-                return new ParseError();
-            case "unknown-named-character-reference":
-                return new ParseError();
-            case "unexpected-null-character":
-                return new ParseError();
-            case "noncharacter-character-reference":
-                return new ParseError();
-            case "eof-in-comment":
-                return new ParseError();
-            case "unexpected-character-in-attribute-name":
-                return new ParseError();
-            case "invalid-first-character-of-tag-name":
-                return new ParseError();
-            case "incorrectly-opened-comment":
-                return new ParseError();
-            case "control-character-in-input-stream":
-                return new ParseError();
-            case "unexpected-solidus-in-tag":
-                return new ParseError();
-            case "unexpected-character-in-unquoted-attribute-value":
-                return new ParseError();
-            case "noncharacter-in-input-stream":
-                return new ParseError();
-            case "null-character-reference":
-                return new ParseError();
-            case "absence-of-digits-in-numeric-character-reference":
-                return new ParseError();
-            case "character-reference-outside-unicode-range":
-                return new ParseError();
-            case "surrogate-character-reference":
-                return new ParseError();
-            case "missing-whitespace-between-attributes":
-                return new ParseError();
-            case "eof-before-tag-name":
-                return new ParseError();
-            case "eof-in-cdata":
-                return new ParseError();
-            case "eof-in-doctype":
-                return new ParseError();
-            case "missing-doctype-name":
-                return new ParseError();
-            case "missing-whitespace-before-doctype-name":
-                return new ParseError();
-            case "invalid-character-sequence-after-doctype-name":
-                return new ParseError();
-            case "missing-quote-before-doctype-public-identifier":
-                return new ParseError();
-            case "missing-whitespace-after-doctype-public-keyword":
-                return new ParseError();
-            case "missing-quote-before-doctype-system-identifier":
-                return new ParseError();
-            case "missing-whitespace-after-doctype-system-keyword":
-                return new ParseError();
-            default:
-                throw new \Exception("Unknown error type {$error->code}");
-        }
+//        return ParseErrors::forCode($error->code, $error->line, $error->col);
+        return ParseErrors::forCode($error->code, 0, 0);
     }
 
     private function convertState($stateName) {

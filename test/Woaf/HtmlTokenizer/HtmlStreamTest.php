@@ -10,6 +10,7 @@ namespace Woaf\HtmlTokenizer;
 
 
 use PHPUnit\Framework\TestCase;
+use Woaf\HtmlTokenizer\Tables\ParseErrors;
 
 class HtmlStreamTest extends TestCase
 {
@@ -44,13 +45,13 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream("twas ", "UTF-8");
         $errors = [];
         $eof = true;
-        $this->assertEquals("t", $buf->consume('t', $errors, $eof));
+        $this->assertEquals("t", $buf->consume(['t'], $errors, $eof));
         $this->assertFalse($eof);
         $this->assertEquals("was", $buf->consume(['t', 'w', 'a', 's'], $errors, $eof));
         $this->assertFalse($eof);
-        $this->assertEquals(" ", $buf->consume(' ', $errors, $eof));
+        $this->assertEquals(" ", $buf->consume([' '], $errors, $eof));
         $this->assertTrue($eof);
-        $this->assertEquals("", $buf->consume(' ', $errors, $eof));
+        $this->assertEquals("", $buf->consume([' '], $errors, $eof));
         $this->assertTrue($eof);
         $this->assertEmpty($errors);
     }
@@ -114,7 +115,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream("tw\r\rw\r\ns", "UTF-8");
         $errors = [];
         $eof = true;
-        $this->assertEquals("t", $buf->consume('t', $errors, $eof));
+        $this->assertEquals("t", $buf->consume(['t'], $errors, $eof));
         $this->assertFalse($eof);
         $this->assertEquals(null, $buf->consume(["\r"], $errors, $eof));
         $this->assertFalse($eof);
@@ -169,7 +170,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->read($errors));
-        $this->assertEquals([new ParseError()], $errors);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
     }
 
     public function testControlCharInStreamConsumeUntil() {
@@ -177,7 +178,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->consumeUntil("a", $errors));
-        $this->assertEquals([new ParseError()], $errors);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
     }
 
     public function testSpecificallyEvilCharInStream() {
@@ -185,6 +186,29 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->read($errors));
-        $this->assertEquals([new ParseError()], $errors);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
     }
+
+    private static function mb_decode_entity($entity) {
+        return mb_decode_numericentity($entity, [ 0x0, 0x10ffff, 0, 0x10ffff ], "UTF-8");
+    }
+
+    public function testValidUnicodeChar() {
+        $badChar = json_decode('"\uDB3F\uDFFD"');
+        $buf = new HtmlStream($badChar, "UTF-8");
+        $errors = [];
+        $read = $buf->read($errors, 2);
+        $this->assertEquals([], $errors);
+        $this->assertEquals($badChar, $read);
+    }
+
+    public function testCornerCaseUnicodeChar() {
+        $badChar = self::mb_decode_entity('&#xDFFF;');
+        $buf = new HtmlStream($badChar, "UTF-8");
+        $errors = [];
+        $read = $buf->read($errors);
+        $this->assertEquals($badChar, $read);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+    }
+
 }

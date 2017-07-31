@@ -8,6 +8,8 @@
 
 namespace Woaf\HtmlTokenizer;
 
+use Woaf\HtmlTokenizer\Tables\ParseErrors;
+
 class HtmlStream
 {
 
@@ -31,6 +33,7 @@ class HtmlStream
         [0x0001, 0x0008],
         [0x000E, 0x001F],
         [0x007F, 0x009F],
+        [0xD800, 0xDFFF], // surrogates
         [0xFDD0, 0xFDEF],
     ];
     
@@ -88,16 +91,10 @@ class HtmlStream
             $this->inputEncoding = $encoding = "UTF-8";
         }
         $this->buffer = mb_convert_encoding($buf, $this->internalEncoding, $encoding);
+        $this->buffer = $buf;
         $this->bufLen = mb_strlen($this->buffer, $this->internalEncoding);
         $this->bufLenBytes = strlen($this->buffer);
     }
-
-/**    public function seek($n) {
-        assert(is_int($n));
-        $pos = $this->cur + $n;
-        assert($this->isInBuffer($pos));
-
-    }*/
 
     private function readChar($pos, &$errors) {
         // This UTTERLY relies on the buffer being well formed UTF-8, which hopefully it is if mb_convert_encoding did its job.
@@ -109,15 +106,15 @@ class HtmlStream
         $chrs = [];
         $chrs[] = ord($chr);
         $width = 1;
-        if ($this->buffer[$pos] >= 0b10000000) {
+        if ($chrs[0] >= 0b11000000) {
             $chr .= $this->buffer[$pos+1];
             $chrs[] = ord($chr);
             $width = 2;
-            if ($this->buffer[$pos] > 0b11000000) {
+            if ($chrs[0] >= 0b11100000) {
                 $chr .= $this->buffer[$pos+2];
                 $chrs[] = ord($chr);
                 $width = 3;
-                if ($this->buffer[$pos] > 0b11100000) {
+                if ($chrs[0] >= 0b11110000) {
                     $width = 4;
                     $chrs[] = ord($chr);
                     $chr .= $this->buffer[$pos+3];
@@ -142,12 +139,12 @@ class HtmlStream
                 throw new \Exception("Wat");
         }
         if (isset(self::$BAD_CHARS[$codepoint])) {
-            $errors[] = new ParseError();
+            $errors[] = ParseErrors::getControlCharacterInInputStream();
         }
         foreach (self::$BAD_RANGES as $range) {
             if ($codepoint <= $range[1]) {
                 if ($codepoint >= $range[0]) {
-                    $errors[] = new ParseError();
+                    $errors[] = ParseErrors::getControlCharacterInInputStream();
                 }
                 break;
             }
@@ -223,12 +220,16 @@ class HtmlStream
         return null;
     }
 
-    public function consume($matching, array &$errors, &$eof = false) {
+    public function consume(array $matching, array &$errors, &$eof = false) {
         $eof = false;
-        if (is_array($matching)) {
-            $matching = join("", $matching);
+        $matchStr = "";
+        foreach ($matching as $match) {
+            $matchStr .= $match;
+            if ($match == "\n" || $match == '\n') {
+                $matchStr .= "\r";
+            }
         }
-        return $this->pConsume('[' . preg_quote($matching) . ']+', $errors, $eof);
+        return $this->pConsume('[' . preg_quote($matchStr) . ']+', $errors, $eof);
     }
 
     public function consumeUntil($matching, array &$errors, &$eof = false) {
@@ -254,7 +255,6 @@ class HtmlStream
 
     public function pConsume($matching, array &$errors, &$eof = false) {
         // TODO errors...
-        $matching = str_replace(array("\n", '\n'), '(?:\r|\n|\r\n)', $matching); // LAAAAAAME
         $eof = false;
         $data = "";
         if (preg_match('/^' . $matching . '/', substr($this->buffer, $this->curBytes), $matches)) {

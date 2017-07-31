@@ -12,4 +12,5 @@ namespace Woaf\HtmlTokenizer;
 interface Error
 {
 
+    public function __toString();
 }
