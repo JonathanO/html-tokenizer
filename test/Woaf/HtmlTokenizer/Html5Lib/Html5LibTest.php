@@ -141,6 +141,16 @@ class Html5LibTest extends TestCase
                 return new ParseError();
             case "missing-whitespace-before-doctype-name":
                 return new ParseError();
+            case "invalid-character-sequence-after-doctype-name":
+                return new ParseError();
+            case "missing-quote-before-doctype-public-identifier":
+                return new ParseError();
+            case "missing-whitespace-after-doctype-public-keyword":
+                return new ParseError();
+            case "missing-quote-before-doctype-system-identifier":
+                return new ParseError();
+            case "missing-whitespace-after-doctype-system-keyword":
+                return new ParseError();
             default:
                 throw new \Exception("Unknown error type {$error->code}");
         }

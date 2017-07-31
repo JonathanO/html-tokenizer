@@ -97,11 +97,11 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
 
     public function consumeNumericEntity(HtmlStream $buffer) {
         $errors = [];
-        $buffer->read();
-        $next = $buffer->readOnly(["x", "X"]);
+        $buffer->read($errors);
+        $next = $buffer->readOnly(["x", "X"], $errors);
         $number = null;
         if ($next) {
-            $hex = $buffer->pConsume("[0-9a-fA-F]+");
+            $hex = $buffer->pConsume("[0-9a-fA-F]+", $errors);
             if ($hex === "") {
                 $errors[] = new ParseError();
                 if ($this->logger) $this->logger->debug("Failed to consume any hex digits in hex numeric char ref");
@@ -110,7 +110,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             if ($this->logger) $this->logger->debug("Consumed hex char ref $hex");
             $number = hexdec($hex);
         } else {
-            $number = $buffer->pConsume("[0-9]+");
+            $number = $buffer->pConsume("[0-9]+", $errors);
             if ($number === "") {
                 $errors[] = new ParseError();
                 if ($this->logger) $this->logger->debug("Failed to consume any decimal digits in decimal numeric char ref");
@@ -122,7 +122,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             }
             if ($this->logger) $this->logger->debug("Consumed decimal char ref $number");
         }
-        if (!$buffer->readOnly(";")) {
+        if (!$buffer->readOnly(";", $errors)) {
             $errors[] = new ParseError();
         }
         if (isset($this->lookup[$number])) {
@@ -167,7 +167,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         $buffer->mark();
         $consumed = 0;
         for ($chr = $buffer->peek(); $chr != null && isset($cur[0][$chr]); $chr = $buffer->peek()) {
-            $buffer->read();
+            $buffer->read($errors);
             $consumed++;
             $cur = $cur[0][$chr];
             if ($cur[1] != null) {
@@ -195,7 +195,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             return [$candidate->characters, $errors];
         } else {
             if ($consumed > 0) {
-                $buffer->pConsume("[a-zA-Z0-9]+");
+                $buffer->pConsume("[a-zA-Z0-9]+", $errors);
                 if ($buffer->peek() == ";") {
                     $errors[] = new ParseError();
                 }
