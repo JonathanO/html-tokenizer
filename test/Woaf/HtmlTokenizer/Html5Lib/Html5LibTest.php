@@ -135,6 +135,8 @@ class Html5LibTest extends TestCase
                 return new ParseError();
             case "eof-in-cdata":
                 return new ParseError();
+            case "eof-in-doctype":
+                return new ParseError();
             default:
                 throw new \Exception("Unknown error type {$error->code}");
         }
@@ -163,7 +165,7 @@ class Html5LibTest extends TestCase
             case "StartTag":
                 return new HtmlStartTagToken($arrtok[1], isset($arrtok[3]) ? $arrtok[3] : false, (array)$arrtok[2]);
             case "DOCTYPE":
-                return new HtmlDocTypeToken($arrtok[1], $arrtok[2], $arrtok[3], $arrtok[4]);
+                return new HtmlDocTypeToken($arrtok[1], $arrtok[2], $arrtok[3], !$arrtok[4]); // $arrtok[4] is  "correctness", which is !quirks-mode.
             default:
                 throw new \Exception("Unknown token type {$arrtok[0]}");
         }

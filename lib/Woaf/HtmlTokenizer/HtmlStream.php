@@ -12,6 +12,7 @@ class HtmlStream
 {
 
     private $internalEncoding;
+    private $inputEncoding;
     private $buffer;
     private $cur = 0;
     private $curBytes = 0;
@@ -19,6 +20,12 @@ class HtmlStream
 
     private $markCur;
     private $markCurBytes;
+
+    private $confidence;
+
+    const CONFIDENCE_CERTAIN = "certain";
+    const CONFIDENCE_TENTATIVE = "tentative";
+    const CONFIDENCE_IRRELEVANT = "irrelevant";
 
     public function mark() {
         $this->markCur = $this->cur;
@@ -47,10 +54,41 @@ class HtmlStream
         return $buf;
     }
 
-    public function __construct($buf, $encoding)
+    private function setEncodingFromBOM($buf) {
+        $two = substr($buf, 0, 2);
+        if ($two == "\xfe\xff") {
+            $this->inputEncoding = "UTF-16BE";
+            return true;
+        } elseif ($two == "\xff\xfe") {
+            $this->inputEncoding = "UTF-16LE";
+            return true;
+        } elseif (substr($buf, 0, 3) == "\xef\xbb\xef") {
+            $this->inputEncoding = "UTF-8";
+            return true;
+        }
+        return false;
+    }
+
+    private function prescan($buf) {
+
+    }
+
+    public function __construct($buf, $forcedEncoding = null, $transportLayerEncoding = null)
     {
         assert(is_string($buf));
         $this->internalEncoding = mb_internal_encoding();
+        if ($forcedEncoding != null) {
+            $this->confidence = self::CONFIDENCE_CERTAIN;
+            $encoding = $forcedEncoding;
+        } elseif (!$this->setEncodingFromBOM($buf)) {
+            $encoding = $this->inputEncoding;
+        } elseif ($transportLayerEncoding != null) {
+            $this->confidence = self::CONFIDENCE_CERTAIN;
+            $encoding = $transportLayerEncoding;
+        } else {
+            $this->confidence = self::CONFIDENCE_TENTATIVE;
+            $this->inputEncoding = $encoding = "UTF-8";
+        }
         $this->buffer = $this->preProcessBuffer(mb_convert_encoding($buf, $this->internalEncoding, $encoding));
         $this->bufLen = mb_strlen($this->buffer, $this->internalEncoding);
     }

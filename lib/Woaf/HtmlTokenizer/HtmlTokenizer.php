@@ -122,6 +122,7 @@ class HtmlTokenizer
     private function getParseErrorAndContinue(&$errors) {
         return function($read, &$data) use (&$errors) {
             $errors[] = new ParseError();
+            $data .= $read;
             return true;
         };
     }
@@ -922,13 +923,9 @@ class HtmlTokenizer
                     );
                     break;
                 case State::$STATE_ATTRIBUTE_VALUE_UNQUOTED:
-
                     $switchBeforeAttrName = $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_NAME, function($read, &$data) {
                         $this->currentTokenBuilder->addAttributeValue($data);
                     });
-
-
-
                     $this->consume(
                         $buffer,
                         $actions = [
@@ -949,7 +946,7 @@ class HtmlTokenizer
                             "=" => $this->getParseErrorAndContinue($errors),
                             "`" => $this->getParseErrorAndContinue($errors),
                         ],
-                        function ($read, $data) {
+                        function ($read, $data) use (&$errors) {
                             $this->currentTokenBuilder->addAttributeValue($data);
                             $errors[] = new ParseError();
                             $this->setState(State::$STATE_DATA);
@@ -1106,7 +1103,7 @@ class HtmlTokenizer
                             $this->comment .= "-" . $this->FFFDReplacementCharacter;
                             $this->setState(State::$STATE_COMMENT);
                         } else {
-                            $this->comment .= "-";
+                            $this->comment .= "-" . $read;
                             $this->setState(State::$STATE_COMMENT);
                         }
                     }
@@ -1223,7 +1220,7 @@ class HtmlTokenizer
                     $this->consume(
                         $buffer,
                         $actions,
-                        function ($read, $data) use (&$tokens) {
+                        function ($read, $data) use (&$tokens, &$errors) {
                             $this->emit($this->currentDoctypeBuilder->setName($data)->isForceQuirks(true)->build(), $tokens);
                             $errors[] = new ParseError();
                             $this->setState(State::$STATE_DATA);
