@@ -103,14 +103,16 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         if ($next) {
             $hex = $buffer->pConsume("[0-9a-fA-F]+");
             if ($hex === "") {
+                $errors[] = new ParseError();
                 if ($this->logger) $this->logger->debug("Failed to consume any hex digits in hex numeric char ref");
-                return ["&$next", $errors];
+                return ["&#$next", $errors];
             }
             if ($this->logger) $this->logger->debug("Consumed hex char ref $hex");
             $number = hexdec($hex);
         } else {
             $number = $buffer->pConsume("[0-9]+");
             if ($number === "") {
+                $errors[] = new ParseError();
                 if ($this->logger) $this->logger->debug("Failed to consume any decimal digits in decimal numeric char ref");
                 return ["&#", $errors];
             }

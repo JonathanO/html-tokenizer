@@ -14,6 +14,7 @@ use Monolog\Processor\IntrospectionProcessor;
 use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\Tables\State;
@@ -92,7 +93,7 @@ class HtmlTokenizerTest extends TestCase
         ], $tokens->getErrors());
     }
 
-    public function testUnfinishedCommentSigh()
+    public function testUnfinishedCommentWithDash()
     {
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText(self::decodeString('<!---<'));
@@ -102,5 +103,37 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new ParseError()
         ], $tokens->getErrors());
+    }
+
+    public function testUnfinishedSimpleComment()
+    {
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText(self::decodeString('<!-- A'));
+        $this->assertEquals([
+            new HtmlCommentToken(" A")
+        ], $tokens->getTokens());
+        $this->assertEquals([
+            new ParseError()
+        ], $tokens->getErrors());
+    }
+
+    public function testDoctypeOnlyPublicId()
+    {
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML Transitional 4.01//EN">');
+        $this->assertEquals([
+            new HtmlDocTypeToken("html",'-//W3C//DTD HTML Transitional 4.01//EN', null, false)
+        ], $tokens->getTokens());
+        $this->assertEquals([], $tokens->getErrors());
+    }
+
+    public function testDoctypeOnlySystemId()
+    {
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText('<!DOCTYPE html SYSTEM "-//W3C//DTD HTML Transitional 4.01//EN">');
+        $this->assertEquals([
+            new HtmlDocTypeToken("html", null, '-//W3C//DTD HTML Transitional 4.01//EN', false)
+        ], $tokens->getTokens());
+        $this->assertEquals([], $tokens->getErrors());
     }
 }

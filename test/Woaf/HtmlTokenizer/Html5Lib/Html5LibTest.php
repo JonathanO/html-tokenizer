@@ -137,6 +137,10 @@ class Html5LibTest extends TestCase
                 return new ParseError();
             case "eof-in-doctype":
                 return new ParseError();
+            case "missing-doctype-name":
+                return new ParseError();
+            case "missing-whitespace-before-doctype-name":
+                return new ParseError();
             default:
                 throw new \Exception("Unknown error type {$error->code}");
         }

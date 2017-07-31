@@ -1081,7 +1081,7 @@ class HtmlTokenizer
                             "-" => $this->getBasicStateSwitcher(State::$STATE_COMMENT_END_DASH, function($read, &$data) { $this->comment .= $data; }),
                             "\0" => $this->getNullReplacer($errors)
                         ],
-                        function ($data) use (&$tokens, &$errors) {
+                        function ($read, &$data) use (&$tokens, &$errors) {
                             $this->comment .= $data;
                             $errors[] = new ParseError();
                             $this->emit(new HtmlCommentToken($this->comment), $tokens);
@@ -1300,12 +1300,10 @@ class HtmlTokenizer
                     } else {
                         switch ($next) {
                             case "\"":
-                                $errors[] = new ParseError();
                                 $this->currentDoctypeBuilder->setPublicIdentifier("");
                                 $this->setState(State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
-                                $errors[] = new ParseError();
                                 $this->currentDoctypeBuilder->setPublicIdentifier("");
                                 $this->setState(State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED);
                                 break;
@@ -1461,12 +1459,10 @@ class HtmlTokenizer
                     } else {
                         switch ($next) {
                             case "\"":
-                                $errors[] = new ParseError();
                                 $this->currentDoctypeBuilder->setSystemIdentifier("");
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
-                                $errors[] = new ParseError();
                                 $this->currentDoctypeBuilder->setSystemIdentifier("");
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED);
                                 break;

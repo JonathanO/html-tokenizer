@@ -16,22 +16,22 @@ class HtmlDocTypeTokenBuilder
     /**
      * @var string
      */
-    private $name;
+    private $name = null;
 
     /**
      * @var string
      */
-    private $publicIdentifier;
+    private $publicIdentifier = null;
 
     /**
      * @var string
      */
-    private $systemIdentifier;
+    private $systemIdentifier = null;
 
     /**
      * @var boolean
      */
-    private $forceQuirks;
+    private $forceQuirks = false;
 
     /**
      * @param string $name
