@@ -17,13 +17,35 @@ abstract class HtmlTagTokenBuilder
 
     private $lastAttribute;
 
+    private $currentAttributeName;
+    private $currentAttributeValue;
+
     public function setName($name) {
         $this->name = $name;
         return $this;
     }
 
     public function addAttribute($name, $value) {
+        if ($this->hasAttribute($name)) {
+            throw new \Exception("Duplicate attribute name");
+        }
+        $this->lastAttribute = null;
         $this->attributes[$name] = $value;
+        return $this;
+    }
+
+    public function startAttributeName($initialValue = "") {
+        $this->lastAttribute = null;
+        $this->currentAttributeName = $initialValue;
+        return $this;
+    }
+
+    public function finishAttributeName($attributeName = "") {
+        if ($this->currentAttributeName != null) {
+            $attributeName = $this->currentAttributeName . $attributeName;
+        }
+        $this->currentAttributeName = null;
+        $this->addAttributeName($attributeName);
         return $this;
     }
 
@@ -33,8 +55,11 @@ abstract class HtmlTagTokenBuilder
     }
 
     public function addAttributeName($name) {
+        if ($this->hasAttribute($name)) {
+            throw new \Exception("Duplicate attribute name");
+        }
         $this->lastAttribute = $name;
-        $this->attributes[$name] = null;
+        $this->attributes[$name] = "";
         return $this;
     }
 
@@ -42,11 +67,25 @@ abstract class HtmlTagTokenBuilder
         return array_key_exists($name, $this->attributes);
     }
 
+    public function startAttributeValue($start = "") {
+        $this->currentAttributeValue = $start;
+        return $this;
+    }
+
+    public function finishAttributeValue($attributeValue = "") {
+        if ($this->currentAttributeValue != null) {
+            $attributeValue = $this->currentAttributeValue . $attributeValue;
+        }
+        $this->currentAttributeValue = null;
+        $this->addAttributeValue($attributeValue);
+        return $this;
+    }
     public function addAttributeValue($value) {
         if (!isset($this->lastAttribute)) {
             throw new \Exception("No open attribute!");
         }
         $this->attributes[$this->lastAttribute] = $value;
+        $this->lastAttribute = null;
         return $this;
     }
 

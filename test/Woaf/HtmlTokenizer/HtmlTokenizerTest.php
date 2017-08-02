@@ -29,7 +29,7 @@ class HtmlTokenizerTest extends TestCase
     
     public function testBasicElement() {
         $parser = $this->getTokenizer();
-        $tokens = $parser->parseText('<div class="foo">LOL</div>');
+        $tokens = $parser->parseText('<div Class="foo">LOL</div>');
         $this->assertEquals([
             new HtmlStartTagToken("div", false, ["class" => "foo"]),
             new HtmlCharToken("LOL"),
@@ -147,4 +147,48 @@ class HtmlTokenizerTest extends TestCase
         ], $tokens->getTokens());
         $this->assertEquals([], $tokens->getErrors());
     }
+
+    public function testNullElement()
+    {
+        $text = "<>";
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+            new HtmlCharToken("<>")
+        ], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getInvalidFirstCharacterOfTagName()], $tokens->getErrors());
+    }
+
+    public function testNullCloseElement()
+    {
+        $text = "</>";
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+        ], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getMissingEndTagName()], $tokens->getErrors());
+    }
+
+    public function testUnClosedEnd()
+    {
+        $text = "</";
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+            new HtmlCharToken("</")
+        ], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getEofBeforeTagName()], $tokens->getErrors());
+    }
+
+    public function testUnquotedEmptyValue()
+    {
+        $text = '<a a =>';
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+            new HtmlStartTagToken("a", false, ['a' => ''])
+        ], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getMissingAttributeValue()], $tokens->getErrors());
+    }
+
 }

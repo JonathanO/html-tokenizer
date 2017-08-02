@@ -18,22 +18,27 @@ use Woaf\HtmlTokenizer\Tables\State;
 
 /**
  * @backupGlobals disabled
+ * @group html5lib
  */
 class Html5LibTest extends TestCase
 {
 
     private static $HTMLLIB5TESTS = __DIR__ . '/../../../../../html5lib-tests/';
 
-    public static function provide() {
+    protected static function getPathToTests() {
         $path = getenv('HTMLLIB5TESTS');
         if ($path === false) {
             $path = self::$HTMLLIB5TESTS;
         }
-        $path .= '/tokenizer';
+        return $path . '/tokenizer';
+    }
+
+    public static function provide() {
+        $path = self::getPathToTests();
         $iterator = new GlobIterator($path . '/*.test', FilesystemIterator::KEY_AS_FILENAME | FilesystemIterator::CURRENT_AS_PATHNAME);
 
         if (!$iterator->count()) {
-            return null;
+            return [[null, null, null]];
         } else {
             $tests = [];
             foreach ($iterator as $fileName => $filePath) {
@@ -62,6 +67,14 @@ class Html5LibTest extends TestCase
             return mb_decode_numericentity("&#x" . $matches[1] . ";", [ 0x0, 0x10ffff, 0, 0x10ffff ]);
         }, $victim);
     }
+
+    protected function setUp() {
+        $testSource = self::getPathToTests();
+        if (!is_dir($testSource)) {
+            $this->markTestSkipped("Did not find html5lib tests in expected location: $testSource");
+        }
+    }
+
     /**
      * @dataProvider provide
      */
@@ -82,7 +95,7 @@ class Html5LibTest extends TestCase
         $result = $tokenizer->parseText($doubleEscaped ? self::unescape($test->input) : $test->input);
 
         $this->assertEquals(array_map(function($a) use ($doubleEscaped) { return $this->convertToken($a, $doubleEscaped); }, $test->output), $result->getTokens(), "Tokens failed to match expected");
-        $this->assertEquals(array_map(array($this, 'convertError'), isset($test->errors) ? $test->errors : []), $result->getErrors(), "Errors failed to match expected");
+        $this->assertEquals(array_map(array($this, 'convertError'), isset($test->errors) ? $test->errors : []), $result->getErrors(), "Errors failed to match expected", 0.0, 10, true);
     }
 
     private function convertError($error) {

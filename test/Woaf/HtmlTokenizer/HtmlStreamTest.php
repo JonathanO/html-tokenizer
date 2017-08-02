@@ -193,6 +193,15 @@ class HtmlStreamTest extends TestCase
         return mb_decode_numericentity($entity, [ 0x0, 0x10ffff, 0, 0x10ffff ], "UTF-8");
     }
 
+    public function testEyeOfTheBasilisk() {
+        $badChar = json_decode('"\uFDD0"');
+        $buf = new HtmlStream($badChar, "UTF-8");
+        $errors = [];
+        $read = $buf->read($errors, 2);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+        $this->assertEquals($badChar, $read);
+    }
+
     public function testValidUnicodeChar() {
         $badChar = json_decode('"\uDB3F\uDFFD"');
         $buf = new HtmlStream($badChar, "UTF-8");
@@ -209,6 +218,15 @@ class HtmlStreamTest extends TestCase
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
         $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+    }
+
+    public function testValidB1UnicodeChar() {
+        $badChar = json_decode('"\u00B1"');
+        $buf = new HtmlStream($badChar, "UTF-8");
+        $errors = [];
+        $read = $buf->read($errors, 2);
+        $this->assertEquals([], $errors);
+        $this->assertEquals($badChar, $read);
     }
 
 }

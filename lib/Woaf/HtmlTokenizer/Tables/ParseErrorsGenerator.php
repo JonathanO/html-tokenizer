@@ -48,6 +48,12 @@ $errors = [
         "incorrectly-closed-comment",
         "missing-doctype-public-identifier",
         "missing-doctype-system-identifier",
+        "missing-attribute-value",
+        "unexpected-character-after-doctype-system-identifier",
+        "missing-whitespace-between-doctype-public-and-system-identifiers",
+        "unexpected-equals-sign-before-attribute-name",
+        "missing-end-tag-name",
+        "nested-comment",
 ];
 
 $functions = "";

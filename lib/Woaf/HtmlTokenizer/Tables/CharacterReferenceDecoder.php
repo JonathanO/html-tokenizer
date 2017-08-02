@@ -128,23 +128,39 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         if (isset($this->lookup[$number])) {
             $remapping = $this->lookup[$number];
             if ($this->logger) $this->logger->debug("Found disallowed reference $number, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
-            $errors[] = ParseErrors::getControlCharacterReference();
+            if ($number == 0) {
+                $errors[] = ParseErrors::getNullCharacterReference();
+            } else {
+                $errors[] = ParseErrors::getControlCharacterReference();
+            }
             return [$remapping[0], $errors];
         } else {
             if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
-                $errors[] = ParseErrors::getSurrogateCharacterReference();
+                if ($number > 0x10FFFF) {
+                    $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
+                } else {
+                    $errors[] = ParseErrors::getSurrogateCharacterReference();
+                }
                 $remapping = $this->lookup[0];
                 if ($this->logger) $this->logger->debug("Found reference $number in bad range, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
                 return [$remapping[0], $errors];
             }
             if (isset($this->parseErrorsLookup[$number])) {
                 if ($this->logger) $this->logger->debug("Found bad codepoint $number, using anyway");
-                $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
+                if ($number == 0x000B) {
+                    $errors[] = ParseErrors::getControlCharacterReference();
+                } else {
+                    $errors[] = ParseErrors::getNoncharacterCharacterReference();
+                }
             } else {
                 foreach (self::$parseErrorRanges as $range) {
                     if ($number >= $range[0] && $number <= $range[1]) {
                         if ($this->logger) $this->logger->debug("Found codepoint $number in bad range ({$range[0]} - {$range[1]}), using anyway");
-                        $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
+                        if ($number >= 0xFDD0) {
+                            $errors[] = ParseErrors::getNoncharacterCharacterReference();
+                        } else {
+                            $errors[] = ParseErrors::getControlCharacterReference();
+                        }
                         break;
                     } elseif ($number <= $range[1]) {
                         // Entries are ordered, we can break out early if under the upper bound.
@@ -187,6 +203,8 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
                         }
                         $buffer->load($start); // Unconsume everything. Sigh.
                         return ["&", $errors];
+                    } else {
+                        $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
                     }
                 } else {
                     $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
@@ -197,7 +215,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             if ($consumed > 0) {
                 $buffer->pConsume("[a-zA-Z0-9]+", $errors);
                 if ($buffer->peek() == ";") {
-                    $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                    $errors[] = ParseErrors::getUnknownNamedCharacterReference();
                 }
                 $buffer->reset();
             }

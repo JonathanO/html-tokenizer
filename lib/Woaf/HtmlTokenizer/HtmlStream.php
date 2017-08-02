@@ -36,7 +36,7 @@ class HtmlStream
         [0xD800, 0xDFFF], // surrogates
         [0xFDD0, 0xFDEF],
     ];
-    
+
     private static $BAD_CHARS = [0x000B => true, 0xFFFE => true, 0xFFFF => true, 0x1FFFE => true, 0x1FFFF => true, 0x2FFFE => true, 0x2FFFF => true, 0x3FFFE => true, 0x3FFFF => true, 0x4FFFE => true, 0x4FFFF => true, 0x5FFFE => true, 0x5FFFF => true, 0x6FFFE => true, 0x6FFFF => true, 0x7FFFE => true, 0x7FFFF => true, 0x8FFFE => true, 0x8FFFF => true, 0x9FFFE => true, 0x9FFFF => true, 0xAFFFE => true, 0xAFFFF => true, 0xBFFFE => true, 0xBFFFF => true, 0xCFFFE => true, 0xCFFFF => true, 0xDFFFE => true, 0xDFFFF => true, 0xEFFFE => true, 0xEFFFF => true, 0xFFFFE => true, 0xFFFFF => true, 0x10FFFE => true, 0x10FFFF];
     private $bufLenBytes;
 
@@ -104,19 +104,19 @@ class HtmlStream
         }
         $chr = $this->buffer[$pos];
         $chrs = [];
-        $chrs[] = ord($chr);
+        $chrs[] = ord($this->buffer[$pos]);
         $width = 1;
         if ($chrs[0] >= 0b11000000) {
             $chr .= $this->buffer[$pos+1];
-            $chrs[] = ord($chr);
+            $chrs[] = ord($this->buffer[$pos+1]);
             $width = 2;
             if ($chrs[0] >= 0b11100000) {
                 $chr .= $this->buffer[$pos+2];
-                $chrs[] = ord($chr);
+                $chrs[] = ord($this->buffer[$pos+2]);
                 $width = 3;
                 if ($chrs[0] >= 0b11110000) {
                     $width = 4;
-                    $chrs[] = ord($chr);
+                    $chrs[] = ord($this->buffer[$pos+3]);
                     $chr .= $this->buffer[$pos+3];
                 }
             }
@@ -130,21 +130,29 @@ class HtmlStream
                 $codepoint = (($chrs[0] & 0b00011111) << 6) | ($chrs[1] & 0b00111111);
                 break;
             case 3:
-                $codepoint = ((($chrs[0] & 0b00001111) << 6) | ($chrs[1] & 0b00111111) << 6) | ($chrs[2] & 0b00111111);
+                $codepoint = (((($chrs[0] & 0b00001111) << 6) | ($chrs[1] & 0b00111111)) << 6) | ($chrs[2] & 0b00111111);
                 break;
             case 4:
-                $codepoint = (((($chrs[0] & 0b00000111) << 6) | ($chrs[1] & 0b00111111) << 6) | ($chrs[2] & 0b00111111) << 6) | ($chrs[3] & 0b00111111);;
+                $codepoint = (((((($chrs[0] & 0b00000111) << 6) | ($chrs[1] & 0b00111111)) << 6) | ($chrs[2] & 0b00111111)) << 6) | ($chrs[3] & 0b00111111);;
                 break;
             default:
                 throw new \Exception("Wat");
         }
         if (isset(self::$BAD_CHARS[$codepoint])) {
-            $errors[] = ParseErrors::getControlCharacterInInputStream();
+            if ($codepoint == 0x000B) {
+                $errors[] = ParseErrors::getControlCharacterInInputStream();
+            } else {
+                $errors[] = ParseErrors::getNoncharacterInInputStream();
+            }
         }
         foreach (self::$BAD_RANGES as $range) {
             if ($codepoint <= $range[1]) {
                 if ($codepoint >= $range[0]) {
-                    $errors[] = ParseErrors::getControlCharacterInInputStream();
+                    if ($codepoint >= 0xFDD0) {
+                        $errors[] = ParseErrors::getNoncharacterInInputStream();
+                    } else {
+                        $errors[] = ParseErrors::getControlCharacterInInputStream();
+                    }
                 }
                 break;
             }

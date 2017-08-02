@@ -45,6 +45,12 @@ class ParseErrors {
   'incorrectly-closed-comment' => 'getIncorrectlyClosedComment',
   'missing-doctype-public-identifier' => 'getMissingDoctypePublicIdentifier',
   'missing-doctype-system-identifier' => 'getMissingDoctypeSystemIdentifier',
+  'missing-attribute-value' => 'getMissingAttributeValue',
+  'unexpected-character-after-doctype-system-identifier' => 'getUnexpectedCharacterAfterDoctypeSystemIdentifier',
+  'missing-whitespace-between-doctype-public-and-system-identifiers' => 'getMissingWhitespaceBetweenDoctypePublicAndSystemIdentifiers',
+  'unexpected-equals-sign-before-attribute-name' => 'getUnexpectedEqualsSignBeforeAttributeName',
+  'missing-end-tag-name' => 'getMissingEndTagName',
+  'nested-comment' => 'getNestedComment',
 );
 
         public static function getEofInTag($line = 0, $col = 0) {
@@ -160,6 +166,24 @@ class ParseErrors {
         }
         public static function getMissingDoctypeSystemIdentifier($line = 0, $col = 0) {
             return new ParseError("missing-doctype-system-identifier", "missing doctype system identifier", $line, $col);
+        }
+        public static function getMissingAttributeValue($line = 0, $col = 0) {
+            return new ParseError("missing-attribute-value", "missing attribute value", $line, $col);
+        }
+        public static function getUnexpectedCharacterAfterDoctypeSystemIdentifier($line = 0, $col = 0) {
+            return new ParseError("unexpected-character-after-doctype-system-identifier", "unexpected character after doctype system identifier", $line, $col);
+        }
+        public static function getMissingWhitespaceBetweenDoctypePublicAndSystemIdentifiers($line = 0, $col = 0) {
+            return new ParseError("missing-whitespace-between-doctype-public-and-system-identifiers", "missing whitespace between doctype public and system identifiers", $line, $col);
+        }
+        public static function getUnexpectedEqualsSignBeforeAttributeName($line = 0, $col = 0) {
+            return new ParseError("unexpected-equals-sign-before-attribute-name", "unexpected equals sign before attribute name", $line, $col);
+        }
+        public static function getMissingEndTagName($line = 0, $col = 0) {
+            return new ParseError("missing-end-tag-name", "missing end tag name", $line, $col);
+        }
+        public static function getNestedComment($line = 0, $col = 0) {
+            return new ParseError("nested-comment", "nested comment", $line, $col);
         }
 
     /**
