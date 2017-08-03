@@ -80,12 +80,12 @@ class HtmlTokenizer
         $this->stack[0] = $state;
     }
 
-    private function emit(HtmlToken $token, &$tokens) {
+    private function emit(HtmlToken $token, array &$tokens) {
         if ($this->logger) $this->logger->debug("Emitting token " . $token);
         $tokens[] = $token;
     }
 
-    private function parseError(ParseError $error, &$errors) {
+    private function parseError(ParseError $error, array &$errors) {
         if ($this->logger) $this->logger->debug("Encountered parse error " . $error);
         $errors[] = $error;
     }
@@ -162,7 +162,7 @@ class HtmlTokenizer
         );
     }
 
-    private function getEntityReplacer(&$errors, $buffer, $additionalAllowedChar = null, $inAttribute = false)
+    private function getEntityReplacer(array &$errors, $buffer, $additionalAllowedChar = null, $inAttribute = false)
     {
         return function ($read, &$data) use (&$errors, $buffer, $additionalAllowedChar, $inAttribute) {
             list($decoded, $decodeErrors) = $this->entityReplacementTable->consumeCharRef($buffer, $additionalAllowedChar, $inAttribute);
@@ -172,7 +172,7 @@ class HtmlTokenizer
         };
     }
 
-    private function getNullReplacer(&$errors)
+    private function getNullReplacer(array &$errors)
     {
         return function($read, &$data) use (&$errors)
         {
@@ -219,7 +219,7 @@ class HtmlTokenizer
             );
     }
 
-    private function consume(HtmlStream $buffer, $actions, $onEof, &$errors) {
+    private function consume(HtmlStream $buffer, array $actions, callable $onEof, array &$errors) {
         $data = "";
         $eof = false;
         while (true) {
@@ -334,9 +334,9 @@ class HtmlTokenizer
                         "\f" => $beforeANameSwitcher,
                         " " => $beforeANameSwitcher,
                         "/" => $this->getBasicStateSwitcher(State::$STATE_SELF_CLOSING_START_TAG, $setTagName),
-                        ">" => function($read, &$data) use (&$tokens) {
+                        ">" => function($read, &$data) use (&$tokens, &$errors) {
                             $this->currentTokenBuilder->setName($data);
-                            $this->emit($this->currentTokenBuilder->build(), $tokens);
+                            $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                             $this->setState(State::$STATE_DATA);
                             return false;
                         },
@@ -400,7 +400,7 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read($errors);
                                 $this->currentTokenBuilder->setName($name);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             default:
@@ -454,7 +454,7 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read($errors);
                                 $this->currentTokenBuilder->setName($name);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             default:
@@ -512,7 +512,7 @@ class HtmlTokenizer
                             case ">":
                                 $buffer->read($errors);
                                 $this->currentTokenBuilder->setName($name);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             default:
@@ -640,7 +640,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read($errors);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             default:
@@ -789,7 +789,7 @@ class HtmlTokenizer
                                 $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             case "\"":
@@ -829,7 +829,7 @@ class HtmlTokenizer
                         "=" => $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_VALUE, $addAttributeName),
                         ">" => function($read, &$data) use (&$tokens, &$errors) {
                             $this->finishAttributeNameOrParseError($data, $errors);
-                            $this->emit($this->currentTokenBuilder->build(), $tokens);
+                            $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                             $this->setState(State::$STATE_DATA);
                             return false;
                         },
@@ -869,7 +869,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read($errors);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             case "\"":
@@ -909,7 +909,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $this->setState(State::$STATE_DATA);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->parseError(ParseErrors::getMissingAttributeValue(), $errors);
                                 break;
                             case "<":
@@ -973,7 +973,7 @@ class HtmlTokenizer
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA,
                                 function($read, &$data) use (&$tokens) {
                                     $this->finishAttributeValueOrDiscard($data);
-                                    $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                    $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 }
                             ),
                             "\0" => $this->getNullReplacer($errors),
@@ -1010,7 +1010,7 @@ class HtmlTokenizer
                                 break;
                             case ">":
                                 $buffer->read($errors);
-                                $this->emit($this->currentTokenBuilder->build(), $tokens);
+                                $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             default:

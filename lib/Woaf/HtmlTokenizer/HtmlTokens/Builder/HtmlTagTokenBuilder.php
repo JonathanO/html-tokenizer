@@ -89,5 +89,5 @@ abstract class HtmlTagTokenBuilder
         return $this;
     }
 
-    abstract public function build();
+    abstract public function build(array &$errors);
 }

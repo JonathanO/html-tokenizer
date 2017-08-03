@@ -125,6 +125,16 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         if (!$buffer->readOnly(";", $errors)) {
             $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
         }
+        if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
+            if ($number > 0x10FFFF) {
+                $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
+            } else {
+                $errors[] = ParseErrors::getSurrogateCharacterReference();
+            }
+            $remapping = $this->lookup[0];
+            if ($this->logger) $this->logger->debug("Found reference $number in bad range, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
+            return [$remapping[0], $errors];
+        }
         if (isset($this->lookup[$number])) {
             $remapping = $this->lookup[$number];
             if ($this->logger) $this->logger->debug("Found disallowed reference $number, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
@@ -135,16 +145,6 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             }
             return [$remapping[0], $errors];
         } else {
-            if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
-                if ($number > 0x10FFFF) {
-                    $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
-                } else {
-                    $errors[] = ParseErrors::getSurrogateCharacterReference();
-                }
-                $remapping = $this->lookup[0];
-                if ($this->logger) $this->logger->debug("Found reference $number in bad range, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
-                return [$remapping[0], $errors];
-            }
             if (isset($this->parseErrorsLookup[$number])) {
                 if ($this->logger) $this->logger->debug("Found bad codepoint $number, using anyway");
                 if ($number == 0x000B) {

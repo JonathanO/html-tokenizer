@@ -32,7 +32,7 @@ class CharacterReferenceDecoderTest extends TestCase
     {
         $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
         $decoded = $decoder->consumeCharRef(new HtmlStream("#x3ffff;", "UTF-8"));
-        $this->assertEquals([json_decode('"\uD8BF\uDFFF"'), [new ParseError()]], $decoded);
+        $this->assertEquals([json_decode('"\uD8BF\uDFFF"'), [ParseErrors::getNoncharacterInInputStream()]], $decoded);
     }
 
     public function testJustAHash()
@@ -45,6 +45,12 @@ class CharacterReferenceDecoderTest extends TestCase
     public function testNull() {
         $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
         $decoded = $decoder->consumeCharRef(new HtmlStream("#0000;", "UTF-8"));
-        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [new ParseError()]], $decoded);
+        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [ParseErrors::getNullCharacterReference()]], $decoded);
+    }
+
+    public function testLoltasticEntity() {
+        $decoder = new CharacterReferenceDecoder(new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT)]));
+        $decoded = $decoder->consumeCharRef(new HtmlStream("#x10000000000000041;", "UTF-8"));
+        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [ParseErrors::getCharacterReferenceOutsideUnicodeRange()]], $decoded);
     }
 }
