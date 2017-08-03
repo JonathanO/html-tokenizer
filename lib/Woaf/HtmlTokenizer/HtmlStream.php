@@ -148,7 +148,9 @@ class HtmlStream
         foreach (self::$BAD_RANGES as $range) {
             if ($codepoint <= $range[1]) {
                 if ($codepoint >= $range[0]) {
-                    if ($codepoint >= 0xFDD0) {
+                    if ($codepoint >= 0xD800 && $codepoint <= 0xDFFF) {
+                        $errors[] = ParseErrors::getSurrogateInInputStream();
+                    } elseif ($codepoint >= 0xFDD0) {
                         $errors[] = ParseErrors::getNoncharacterInInputStream();
                     } else {
                         $errors[] = ParseErrors::getControlCharacterInInputStream();

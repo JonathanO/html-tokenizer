@@ -971,7 +971,7 @@ class HtmlTokenizer
                             " " => $switchBeforeAttrName,
                             "&" => $this->getEntityReplacer($errors, $buffer, ">", true),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA,
-                                function($read, &$data) use (&$tokens) {
+                                function($read, &$data) use (&$tokens, &$errors) {
                                     $this->finishAttributeValueOrDiscard($data);
                                     $this->emit($this->currentTokenBuilder->build($errors), $tokens);
                                 }
@@ -1026,7 +1026,7 @@ class HtmlTokenizer
                         $this->setState(State::$STATE_DATA);
                     } else {
                         if ($next == ">") {
-                            $this->emit($this->currentTokenBuilder->isSelfClosing(true)->build(), $tokens);
+                            $this->emit($this->currentTokenBuilder->isSelfClosing(true)->build($errors), $tokens);
                             $buffer->read($errors);
                             $this->setState(State::$STATE_DATA);
                         } else {
