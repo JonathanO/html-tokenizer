@@ -1006,7 +1006,7 @@ class HtmlTokenizer
                     break;
                 case State::$STATE_BOGUS_COMMENT:
                     $switchAndEmit = $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens) {
-                        $this->emit(new HtmlCommentToken($data), $tokens);
+                        $this->emit(new HtmlCommentToken($this->comment . $data), $tokens);
                     });
                     $this->consume($buffer,
                         [
@@ -1280,12 +1280,12 @@ class HtmlTokenizer
                 case State::$STATE_AFTER_DOCTYPE_NAME:
                     $buffer->consume(self::WHITESPACE, $errors);
                     $first = $buffer->read($errors);
-                    if ($next == null) {
+                    if ($first == null) {
                         $this->parseError(ParseErrors::getEofInDoctype(), $errors);
                         $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build(), $tokens);
                         $done = true;
                     } else {
-                        if ($next == ">") {
+                        if ($first == ">") {
                             $this->emit($this->currentDoctypeBuilder->build(), $tokens);
                             $this->setState(State::$STATE_DATA);
                         } else {
@@ -1548,12 +1548,12 @@ class HtmlTokenizer
                             "\0" => $this->getNullReplacer($errors),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens, &$errors) {
                                 $this->parseError(ParseErrors::getAbruptDoctypeSystemIdentifier(), $errors);
-                                $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build(), $tokens);
+                                $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build(), $tokens);
                             })
                         ],
                         function($read, &$data) use (&$tokens, &$errors, &$done) {
                             $this->parseError(ParseErrors::getEofInDoctype(), $errors);
-                            $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build(), $tokens);
+                            $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build(), $tokens);
                             $done = true;
                         },
                         $errors
@@ -1567,12 +1567,12 @@ class HtmlTokenizer
                             "\0" => $this->getNullReplacer($errors),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens, &$errors) {
                                 $this->parseError(ParseErrors::getAbruptDoctypeSystemIdentifier(), $errors);
-                                $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build(), $tokens);
+                                $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build(), $tokens);
                             })
                         ],
                         function($read, &$data) use (&$tokens, &$errors, &$done) {
                             $this->parseError(ParseErrors::getEofInDoctype(), $errors);
-                            $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build(), $tokens);
+                            $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build(), $tokens);
                             $done = true;
                         },
                         $errors
@@ -1608,11 +1608,13 @@ class HtmlTokenizer
                     break;
                 case State::$STATE_CDATA_SECTION:
                     $consumed = $buffer->consumeUntil("]", $errors, $eof);
+                    if ($consumed != "") {
+                        $tokens[] = new HtmlCharToken($consumed);
+                    }
                     if ($eof) {
                         $this->parseError(ParseErrors::getEofInCdata(), $errors);
                         $done = true;
                     } else {
-                        $tokens[] = new HtmlCharToken($consumed);
                         $this->setState(State::$STATE_CDATA_SECTION_BRACKET);
                     }
                     break;
