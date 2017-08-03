@@ -11,7 +11,7 @@ namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
 abstract class HtmlTagTokenBuilder
 {
-    protected $name;
+    protected $name = "";
     protected $isSelfClosing = false;
     protected $attributes = [];
 

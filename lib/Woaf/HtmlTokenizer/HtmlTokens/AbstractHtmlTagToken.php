@@ -9,8 +9,6 @@
 namespace Woaf\HtmlTokenizer\HtmlTokens;
 
 
-use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlTagTokenBuilder;
-
 abstract class AbstractHtmlTagToken implements HtmlToken
 {
 

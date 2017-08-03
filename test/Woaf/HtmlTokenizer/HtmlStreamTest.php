@@ -198,7 +198,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors, 2);
-        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getNoncharacterInInputStream()], $errors);
         $this->assertEquals($badChar, $read);
     }
 
@@ -211,13 +211,13 @@ class HtmlStreamTest extends TestCase
         $this->assertEquals($badChar, $read);
     }
 
-    public function testCornerCaseUnicodeChar() {
+    public function testSurrogateChar() {
         $badChar = self::mb_decode_entity('&#xDFFF;');
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
-        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
     }
 
     public function testValidB1UnicodeChar() {

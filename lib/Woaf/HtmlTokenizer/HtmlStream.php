@@ -23,11 +23,13 @@ class HtmlStream
     private $markCur;
     private $markCurBytes;
 
+    private $lastCur;
+    private $lastCurBytes;
+
     private $confidence;
 
     const CONFIDENCE_CERTAIN = "certain";
     const CONFIDENCE_TENTATIVE = "tentative";
-    const CONFIDENCE_IRRELEVANT = "irrelevant";
 
     private static $BAD_RANGES = [
         [0x0001, 0x0008],
@@ -57,6 +59,22 @@ class HtmlStream
     public function load($save) {
         list($this->cur, $this->curBytes) = $save;
     }
+
+    private function loadAndUpdateLast($save) {
+        $this->updateLast();
+        list($this->cur, $this->curBytes) = $save;
+    }
+
+    private function updateLast() {
+        $this->lastCur = $this->cur;
+        $this->lastCurBytes = $this->curBytes;
+    }
+
+    public function unconsume() {
+        $this->cur = $this->lastCur;
+        $this->curBytes = $this->lastCurBytes;
+    }
+
 
     private function setEncodingFromBOM($buf) {
         $two = substr($buf, 0, 2);
@@ -215,7 +233,7 @@ class HtmlStream
 
     public function read(array &$errors, $len = 1) {
         list($ptr, $read) = $this->peekInternal($len, $errors);
-        $this->load($ptr);
+        $this->loadAndUpdateLast($ptr);
         return $read;
     }
 
@@ -223,9 +241,10 @@ class HtmlStream
         if (!is_array($matching)) {
             $matching = preg_split("//u", $matching);
         }
-        $char = $this->peek();
+        list($ptr, $char) = $this->peekInternal(1, $errors);
         if (in_array($char, $matching)) {
-            return $this->read($errors);
+            $this->loadAndUpdateLast($ptr);
+            return $char;
         }
         return null;
     }
@@ -250,7 +269,7 @@ class HtmlStream
         $matcher = array_flip($matching);
         $buf = "";
         while (true) {
-            $char = $this->peek();
+            list($ptr, $char) = $this->peekInternal(1, $errors);
             if ($char === null) {
                 $eof = true;
                 break;
@@ -258,7 +277,8 @@ class HtmlStream
             if (isset($matcher[$char])) {
                 break;
             }
-            $buf .= $this->read($errors);
+            $this->loadAndUpdateLast($ptr);
+            $buf .= $char;
         }
         return $buf;
     }
@@ -267,6 +287,7 @@ class HtmlStream
         // TODO errors...
         $eof = false;
         $data = "";
+        $this->updateLast();
         if (preg_match('/^' . $matching . '/', substr($this->buffer, $this->curBytes), $matches)) {
             $data = $matches[0];
             $this->cur += mb_strlen($data, $this->internalEncoding);
