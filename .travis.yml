@@ -7,7 +7,7 @@ php:
 env:
   - HTMLLIB5TESTS=$PWD/html5lib-tests/
 before_script:
-  - if [[ "$TRAVIS_PHP_VERSION" = "hhv*" ]]; then cat hhvm-php7.ini >> /etc/hhvm/php.ini
+  - if [[ "$TRAVIS_PHP_VERSION" = "hhv*" ]]; then cat hhvm-php7.ini >> /etc/hhvm/php.ini; fi
 install:
   - git clone https://github.com/html5lib/html5lib-tests.git
   - composer install --ignore-platform-reqs
