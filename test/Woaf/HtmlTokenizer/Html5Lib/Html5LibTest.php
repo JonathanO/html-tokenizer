@@ -92,8 +92,12 @@ class Html5LibTest extends TestCase
             return;
         }
 
-        // , last tag state
-        $tokenizer = new HtmlTokenizer(new Logger("html5libtest", [new StreamHandler(STDOUT)], [new IntrospectionProcessor()]));
+        $logLevel = getenv("LOGLEVEL");
+        if ($logLevel === false) {
+            $logLevel = "DEBUG";
+        }
+
+        $tokenizer = new HtmlTokenizer(new Logger("html5libtest", [new StreamHandler(STDOUT, constant("Monolog\Logger::$logLevel"))], [new IntrospectionProcessor()]));
         $lastStartTagName = null;
         if (isset($test->lastStartTag)) {
             $lastStartTagName = $test->lastStartTag;

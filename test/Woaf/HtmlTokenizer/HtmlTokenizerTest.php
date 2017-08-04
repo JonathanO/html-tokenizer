@@ -22,9 +22,19 @@ use Woaf\HtmlTokenizer\Tables\State;
 
 class HtmlTokenizerTest extends TestCase
 {
-    
+
+    private static function getLogger() {
+        $logLevel = getenv("LOGLEVEL");
+        if ($logLevel === false) {
+            $logLevel = "DEBUG";
+        }
+        $level = constant("Monolog\Logger::$logLevel");
+        new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT, $level)]);
+    }
+
+
     private function getTokenizer() {
-        return new HtmlTokenizer(new Logger("HtmlTokenizerTest", [new StreamHandler(STDOUT)], [new IntrospectionProcessor()]));
+        return new HtmlTokenizer(new Logger("HtmlTokenizerTest", [new StreamHandler(STDOUT, self::getLogger())], [new IntrospectionProcessor()]));
     }
     
     public function testBasicElement() {
