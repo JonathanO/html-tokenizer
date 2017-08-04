@@ -5,4 +5,5 @@ php:
   - hhvm
   - nightly
 install:
+  - git clone https://github.com/html5lib/html5lib-tests.git
   - composer install --dev
