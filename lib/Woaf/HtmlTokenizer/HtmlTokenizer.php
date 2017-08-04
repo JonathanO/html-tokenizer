@@ -109,15 +109,6 @@ class HtmlTokenizer
         $this->FFFDReplacementCharacter = mb_decode_numericentity("&#xFFFD;", [ 0x0, 0x10ffff, 0, 0x10ffff ]);
     }
 
-    protected function andWhitespace($match) {
-        if (!is_array($match)) {
-            $a = self::WHITESPACE;
-            $a[] = $match;
-            return $a;
-        }
-        return array_merge($match, self::WHITESPACE);
-    }
-
     private function getBasicStateSwitcher($newState, callable $andThen = null, $doConsume = true) {
         return function($read, &$data, &$consume) use ($newState, $andThen, $doConsume) {
             $consume = $doConsume;
@@ -137,7 +128,7 @@ class HtmlTokenizer
         };
     }
 
-    protected function consumeDataWithEntityReplacement(HtmlStream $buffer, $ltState, array &$errors, array &$tokens, $doNullReplacement, &$eof) {
+    private function consumeDataWithEntityReplacement(HtmlStream $buffer, $ltState, array &$errors, array &$tokens, $doNullReplacement, &$eof) {
 
         $andEmit = function($read, &$data) use (&$tokens) {
             if ($data !== "") {
@@ -192,7 +183,7 @@ class HtmlTokenizer
      * @param $eof
      * @throws \Exception
      */
-    protected function consumeDataNoEntityReplacement(HtmlStream $buffer, array $states, array &$errors, array &$tokens, &$eof) {
+    private function consumeDataNoEntityReplacement(HtmlStream $buffer, array $states, array &$errors, array &$tokens, &$eof) {
 
         $andEmit = function($read, &$data) use (&$tokens) {
             if ($data !== "") {
@@ -1690,56 +1681,7 @@ class HtmlTokenizer
         return $newTokens;
     }
 
-    protected function parseOpenTagClosing(HtmlStream $buffer) {
-        $andClose = $buffer->readOnly("/", $errors);
-        if (!$buffer->readOnly(">", $errors)) {
-            throw new \Exception("TODO: Parse error, expected > got " . $buffer->peek());
-        }
-        return $andClose;
-    }
-
-    protected function readAttrName(HtmlStream $buffer) {
-        $attrName = $buffer->consumeUntil($this->andWhitespace("="), $errors, $eof);
-        // We insist that the entire attr name and the = and the quote is in this node.
-        if ($eof) {
-            throw new \Exception("TODO: Parse error");
-        }
-        $buffer->consume(self::WHITESPACE, $errors);
-        if (!$buffer->readOnly("=", $errors)) {
-            throw new \Exception("TODO: Parse error, expected = got " . $buffer->peek());
-        }
-        $buffer->consume(self::WHITESPACE, $errors);
-        if (!$buffer->readOnly('"', $errors)) {
-            throw new \Exception("TODO: Parse error");
-        }
-        return $attrName;
-    }
-
-    protected function parseCloseTag(HtmlStream $buffer) {
-        if (!$buffer->readOnly("/", $errors)) {
-            throw new \Exception("TODO: Parse error");
-        }
-        $tagName = $buffer->consumeUntil($this->andWhitespace(">"), $errors, $eof);
-        if ($eof) {
-            throw new \Exception("TODO: Parse error");
-        }
-        $buffer->consume(self::WHITESPACE, $errors, $eof);
-        if (!$buffer->readOnly(">", $errors)) {
-            throw new \Exception("TODO: Parse error");
-        }
-        return $tagName;
-    }
-
-    protected function readStartTagName(HtmlStream $buffer) {
-        $tagName = $buffer->consumeUntil($this->andWhitespace(["/", ">"]), $errors, $eof);
-        if ($eof) {
-            throw new \Exception("TODO: Parse error");
-        }
-        return $tagName;
-    }
-
-
-    protected function isVoidElement($tagName) {
+    private function isVoidElement($tagName) {
         return isset($this->voidElements[$tagName]);
     }
 

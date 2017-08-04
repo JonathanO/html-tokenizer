@@ -31,15 +31,8 @@ class HtmlStream
     const CONFIDENCE_CERTAIN = "certain";
     const CONFIDENCE_TENTATIVE = "tentative";
 
-    private static $BAD_RANGES = [
-        [0x0001, 0x0008],
-        [0x000E, 0x001F],
-        [0x007F, 0x009F],
-        [0xD800, 0xDFFF], // surrogates
-        [0xFDD0, 0xFDEF],
-    ];
-
-    private static $BAD_CHARS = [0x000B => true, 0xFFFE => true, 0xFFFF => true, 0x1FFFE => true, 0x1FFFF => true, 0x2FFFE => true, 0x2FFFF => true, 0x3FFFE => true, 0x3FFFF => true, 0x4FFFE => true, 0x4FFFF => true, 0x5FFFE => true, 0x5FFFF => true, 0x6FFFE => true, 0x6FFFF => true, 0x7FFFE => true, 0x7FFFF => true, 0x8FFFE => true, 0x8FFFF => true, 0x9FFFE => true, 0x9FFFF => true, 0xAFFFE => true, 0xAFFFF => true, 0xBFFFE => true, 0xBFFFF => true, 0xCFFFE => true, 0xCFFFF => true, 0xDFFFE => true, 0xDFFFF => true, 0xEFFFE => true, 0xEFFFF => true, 0xFFFFE => true, 0xFFFFF => true, 0x10FFFE => true, 0x10FFFF];
+    private static $NON_CHARS = [0xFFFE => true, 0xFFFF => true, 0x1FFFE => true, 0x1FFFF => true, 0x2FFFE => true, 0x2FFFF => true, 0x3FFFE => true, 0x3FFFF => true, 0x4FFFE => true, 0x4FFFF => true, 0x5FFFE => true, 0x5FFFF => true, 0x6FFFE => true, 0x6FFFF => true, 0x7FFFE => true, 0x7FFFF => true, 0x8FFFE => true, 0x8FFFF => true, 0x9FFFE => true, 0x9FFFF => true, 0xAFFFE => true, 0xAFFFF => true, 0xBFFFE => true, 0xBFFFF => true, 0xCFFFE => true, 0xCFFFF => true, 0xDFFFE => true, 0xDFFFF => true, 0xEFFFE => true, 0xEFFFF => true, 0xFFFFE => true, 0xFFFFF => true, 0x10FFFE => true, 0x10FFFF => true];
+    private static $WHITESPACE = [0x0009 => true, 0x000A => true, 0x000C => true, 0x000D => true, 0x020 => true];
     private $bufLenBytes;
 
     public function mark() {
@@ -114,7 +107,8 @@ class HtmlStream
         $this->bufLenBytes = strlen($this->buffer);
     }
 
-    private function readChar($pos, &$errors) {
+    private function readChar($pos)
+    {
         // This UTTERLY relies on the buffer being well formed UTF-8, which hopefully it is if mb_convert_encoding did its job.
         // TODO: maybe actually check errors like wat.
         if ($pos >= $this->bufLenBytes) {
@@ -125,17 +119,17 @@ class HtmlStream
         $chrs[] = ord($this->buffer[$pos]);
         $width = 1;
         if ($chrs[0] >= 0b11000000) {
-            $chr .= $this->buffer[$pos+1];
-            $chrs[] = ord($this->buffer[$pos+1]);
+            $chr .= $this->buffer[$pos + 1];
+            $chrs[] = ord($this->buffer[$pos + 1]);
             $width = 2;
             if ($chrs[0] >= 0b11100000) {
-                $chr .= $this->buffer[$pos+2];
-                $chrs[] = ord($this->buffer[$pos+2]);
+                $chr .= $this->buffer[$pos + 2];
+                $chrs[] = ord($this->buffer[$pos + 2]);
                 $width = 3;
                 if ($chrs[0] >= 0b11110000) {
                     $width = 4;
-                    $chrs[] = ord($this->buffer[$pos+3]);
-                    $chr .= $this->buffer[$pos+3];
+                    $chrs[] = ord($this->buffer[$pos + 3]);
+                    $chr .= $this->buffer[$pos + 3];
                 }
             }
         }
@@ -156,29 +150,16 @@ class HtmlStream
             default:
                 throw new \Exception("Wat");
         }
-        if (isset(self::$BAD_CHARS[$codepoint])) {
-            if ($codepoint == 0x000B) {
-                $errors[] = ParseErrors::getControlCharacterInInputStream();
-            } else {
-                $errors[] = ParseErrors::getNoncharacterInInputStream();
-            }
+        $error = null;
+        if ($codepoint >= 0xD800 && $codepoint <= 0xDFFF) {
+            $error = ParseErrors::getSurrogateInInputStream();
+        } elseif (isset(self::$NON_CHARS[$codepoint]) || ($codepoint >= 0xFDD0 && $codepoint <= 0xFDEF) || $codepoint > 0x10FFFF) {
+            $error = ParseErrors::getNoncharacterInInputStream();
+        } elseif (!isset(self::$WHITESPACE[$codepoint]) && (($codepoint > 0x0000 && $codepoint <= 0x001F) || ($codepoint >= 0x007F && $codepoint <= 0x009F))) {
+            // not whitespace, not null, is otherwise a control char
+            $error = ParseErrors::getControlCharacterInInputStream();
         }
-        foreach (self::$BAD_RANGES as $range) {
-            if ($codepoint <= $range[1]) {
-                if ($codepoint >= $range[0]) {
-                    if ($codepoint >= 0xD800 && $codepoint <= 0xDFFF) {
-                        $errors[] = ParseErrors::getSurrogateInInputStream();
-                    } elseif ($codepoint >= 0xFDD0) {
-                        $errors[] = ParseErrors::getNoncharacterInInputStream();
-                    } else {
-                        $errors[] = ParseErrors::getControlCharacterInInputStream();
-                    }
-                }
-                break;
-            }
-        }
-
-        return [$chr, $width, $codepoint];
+        return [$chr, $width, $codepoint, $error];
     }
 
     private function peekInternal($len = 1, &$errors) {
@@ -186,8 +167,12 @@ class HtmlStream
         $read = null;
         $lastWasCR = false;
         $chr = null;
+        $codepoints = [];
         for ($i = $this->curBytes; $chrs < $len; $i += $width) {
-            list ($chr, $width) = $this->readChar($i, $errors);
+            list ($chr, $width, $codepoint, $error) = $this->readChar($i);
+            if ($error) {
+                $errors[] = $error;
+            }
             if ($chr === null) {
                 break;
             }
@@ -195,9 +180,11 @@ class HtmlStream
             if ($chr == "\r") {
                 $lastWasCR = true;
                 $read .= "\n";
+                $codepoints[] = 0x000A;
             } else {
                 if (!($chr == "\n" && $lastWasCR)) {
                     $read .= $chr;
+                    $codepoints[] = $codepoint;
                 }
                 $lastWasCR = false;
             }
@@ -205,7 +192,7 @@ class HtmlStream
         if ($chr !== null) {
             if ($lastWasCR) {
                 // Read ahead an extra char
-                list ($chr, $width) = $this->readChar($i, $noop);
+                list ($chr, $width) = $this->readChar($i);
                 if ($chr == "\n") {
                     // Skip that for next time.
                     $i += $width;
@@ -216,7 +203,7 @@ class HtmlStream
 
         $ptr = [$this->cur + $chrs, $i];
 
-        return [$ptr, $read];
+        return [$ptr, $read, $codepoints];
     }
 
     public function peek($len = 1) {
