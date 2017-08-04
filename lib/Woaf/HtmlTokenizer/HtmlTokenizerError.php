@@ -9,7 +9,7 @@
 namespace Woaf\HtmlTokenizer;
 
 
-interface Error
+interface HtmlTokenizerError
 {
 
     public function __toString();

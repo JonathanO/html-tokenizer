@@ -13,7 +13,7 @@ class TokenizerResult {
     /**
      * TokenizerResult constructor.
      * @param HtmlToken[] $tokens
-     * @param Error[] $errors
+     * @param HtmlTokenizerError[] $errors
      * @param $state
      */
     public function __construct($tokens, $errors, $state = null)
@@ -32,7 +32,7 @@ class TokenizerResult {
     }
 
     /**
-     * @return Error[]
+     * @return HtmlTokenizerError[]
      */
     public function getErrors()
     {

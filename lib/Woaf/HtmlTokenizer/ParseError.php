@@ -9,7 +9,7 @@
 namespace Woaf\HtmlTokenizer;
 
 
-class ParseError implements Error
+class ParseError implements HtmlTokenizerError
 {
 
     private $code;

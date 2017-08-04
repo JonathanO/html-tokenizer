@@ -1587,14 +1587,16 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BOGUS_DOCTYPE:
-                    $buffer->consumeUntil([">"], $errors);
-                    $read = $buffer->read($errors);
-                    $this->emit($this->currentDoctypeBuilder->build(), $tokens);
-                    if ($read == null) {
-                        $done = true;
-                    } else {
-                        $this->setState(State::$STATE_DATA);
-                    }
+                    $this->consume($buffer, [
+                            ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens) {
+                                $this->emit($this->currentDoctypeBuilder->build(), $tokens);
+                            }),
+                        ],
+                        function($read, &$data) use (&$done) {
+                            $this->emit($this->currentDoctypeBuilder->build(), $tokens);
+                            $done = true;
+                        },
+                        $errors);
                     break;
                 case State::$STATE_CDATA_SECTION:
                     $consumed = $buffer->consumeUntil("]", $errors, $eof);
