@@ -3,10 +3,10 @@ php:
   - '7.0'
   - '7.1'
   - hhvm
-    before_script: phpenv config-add hhvm-php7.ini
   - nightly
 env:
   - HTMLLIB5TESTS=$PWD/html5lib-tests/
+before_script: phpenv config-add hhvm-php7.ini
 install:
   - git clone https://github.com/html5lib/html5lib-tests.git
   - composer install --ignore-platform-reqs
