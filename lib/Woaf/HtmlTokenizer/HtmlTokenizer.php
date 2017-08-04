@@ -1281,11 +1281,11 @@ class HtmlTokenizer
                             $this->emit($this->currentDoctypeBuilder->build(), $tokens);
                             $this->setState(State::$STATE_DATA);
                         } else {
-                            $next = strtoupper($buffer->peek(5));
-                            if ($first . $next == "PUBLIC") {
+                            $potentialKeyword = strtoupper($first . $buffer->peek(5));
+                            if ($potentialKeyword == "PUBLIC") {
                                 $buffer->read($errors, 5);
                                 $this->setState(State::$STATE_AFTER_DOCTYPE_PUBLIC_KEYWORD);
-                            } elseif ($first . $next == "SYSTEM") {
+                            } elseif ($potentialKeyword == "SYSTEM") {
                                 $buffer->read($errors, 5);
                                 $this->setState(State::$STATE_AFTER_DOCTYPE_SYSTEM_KEYWORD);
                             } else {
@@ -1403,8 +1403,8 @@ class HtmlTokenizer
                 case State::$STATE_AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
                     $next = $buffer->read($errors);
                     if ($next == null) {
+                        $this->parseError(ParseErrors::getEofInDoctype(), $errors);
                         $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build(), $tokens);
-                        $this->setState(State::$STATE_DATA);
                         $done = true;
                     } else {
                         switch ($next) {

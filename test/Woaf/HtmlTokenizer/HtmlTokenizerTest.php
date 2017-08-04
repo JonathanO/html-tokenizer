@@ -217,4 +217,13 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([ParseErrors::getMissingAttributeValue()], $tokens->getErrors());
     }
 
+    public function testDoctypePublicCaseSensitivity()
+    {
+        $text = "<!dOcTyPe hTmL pUbLiC \"aBc\" \"xYz\">";
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+            new HtmlDocTypeToken("html", "aBc", "xYz", false)], $tokens->getTokens());
+        $this->assertEquals([], $tokens->getErrors());
+    }
 }
