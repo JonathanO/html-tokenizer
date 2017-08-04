@@ -4,6 +4,8 @@ php:
   - '7.1'
   - hhvm
   - nightly
+env:
+  - HTMLLIB5TESTS=$HOME/html5lib-tests/
 install:
   - git clone https://github.com/html5lib/html5lib-tests.git
   - composer install --dev
