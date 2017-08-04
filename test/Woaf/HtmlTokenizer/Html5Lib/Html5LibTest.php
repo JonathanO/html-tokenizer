@@ -35,6 +35,10 @@ class Html5LibTest extends TestCase
 
     public static function provide() {
         $path = self::getPathToTests();
+        if (!is_dir($path)) {
+            // GlobIterator bug in PHP 7.0 means we need to bail out early if there are no files.
+            return [[null, null, null]];
+        }
         $iterator = new GlobIterator($path . '/*.test', FilesystemIterator::KEY_AS_FILENAME | FilesystemIterator::CURRENT_AS_PATHNAME);
 
         if (!$iterator->count()) {
@@ -79,6 +83,10 @@ class Html5LibTest extends TestCase
      * @dataProvider provide
      */
     public function testTest($filename, $initialState, $test) {
+        if ($filename === null) {
+            $this->markTestSkipped("No test files found in " . self::getPathToTests());
+            return;
+        }
         if ($test === null) {
             $this->markTestSkipped("$filename contained no tests");
             return;

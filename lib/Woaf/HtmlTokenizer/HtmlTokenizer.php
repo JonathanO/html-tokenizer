@@ -233,7 +233,8 @@ class HtmlTokenizer
             }
         }
         if ($eof) {
-            $onEof(null, $data);
+            $noop = null;
+            $onEof(null, $data, $noop);
         }
     }
 

@@ -47,7 +47,7 @@ class HtmlTokenizerTest extends TestCase
 
     public function testBasicHtml() {
         $parser = $this->getTokenizer();
-        $tokens = $parser->parseText(file_get_contents("basic.html"));
+        $tokens = $parser->parseText(file_get_contents(__DIR__ . "/basic.html"));
         $this->assertEquals([
             new HtmlDocTypeToken("html", null, null, false),
             new HtmlCharToken("\n"),
