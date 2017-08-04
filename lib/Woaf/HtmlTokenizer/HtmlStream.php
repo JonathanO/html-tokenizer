@@ -239,7 +239,7 @@ class HtmlStream
         return null;
     }
 
-    public function consume(array $matching, array &$errors, &$eof = false) {
+    private function consume(array $matching, array &$errors, &$eof = false) {
         $eof = false;
         $matchStr = "";
         foreach ($matching as $match) {
@@ -249,6 +249,11 @@ class HtmlStream
             }
         }
         return $this->pConsume('[' . preg_quote($matchStr) . ']+', $errors, $eof);
+    }
+
+    public function discardWhitespace() {
+        $errors = [];
+        $this->consume([" ", "\n", "\t", "\f"], $errors);
     }
 
     public function consumeUntil($matching, array &$errors, &$eof = false) {

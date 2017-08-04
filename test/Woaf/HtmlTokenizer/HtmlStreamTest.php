@@ -41,21 +41,6 @@ class HtmlStreamTest extends TestCase
         $this->assertEmpty($errors);
     }
 
-    public function testConsume() {
-        $buf = new HtmlStream("twas ", "UTF-8");
-        $errors = [];
-        $eof = true;
-        $this->assertEquals("t", $buf->consume(['t'], $errors, $eof));
-        $this->assertFalse($eof);
-        $this->assertEquals("was", $buf->consume(['t', 'w', 'a', 's'], $errors, $eof));
-        $this->assertFalse($eof);
-        $this->assertEquals(" ", $buf->consume([' '], $errors, $eof));
-        $this->assertTrue($eof);
-        $this->assertEquals("", $buf->consume([' '], $errors, $eof));
-        $this->assertTrue($eof);
-        $this->assertEmpty($errors);
-    }
-
     public function testConsumeUntil() {
         $buf = new HtmlStream("twas ", "UTF-8");
         $errors = [];
@@ -108,19 +93,6 @@ class HtmlStreamTest extends TestCase
         $this->assertEquals("\n", $buf->readOnly("w\n", $errors));
         $this->assertEquals(null, $buf->readOnly("w\n", $errors));
         $this->assertEquals("s", $buf->readOnly('s', $errors));
-        $this->assertEmpty($errors);
-    }
-
-    public function testConsumeCr() {
-        $buf = new HtmlStream("tw\r\rw\r\ns", "UTF-8");
-        $errors = [];
-        $eof = true;
-        $this->assertEquals("t", $buf->consume(['t'], $errors, $eof));
-        $this->assertFalse($eof);
-        $this->assertEquals(null, $buf->consume(["\r"], $errors, $eof));
-        $this->assertFalse($eof);
-        $this->assertEquals("w\n\nw\ns", $buf->consume(["w", "\n", "s"], $errors, $eof));
-        $this->assertTrue($eof);
         $this->assertEmpty($errors);
     }
 

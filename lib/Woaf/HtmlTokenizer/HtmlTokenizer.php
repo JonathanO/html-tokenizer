@@ -29,8 +29,6 @@ class HtmlTokenizer
 {
     use LoggerAwareTrait;
 
-    const WHITESPACE = [" ", "\n", "\t", "\f"];
-
     private $FFFDReplacementCharacter;
 
     private $entityReplacementTable;
@@ -841,7 +839,7 @@ class HtmlTokenizer
                     );
                     break;
                 case State::$STATE_AFTER_ATTRIBUTE_NAME:
-                    $buffer->consume(["\t", "\n", "\f", " "], $errors);
+                    $buffer->discardWhitespace();
                     $next = $buffer->read($errors);
                     if ($next == null) {
                         $this->parseError(ParseErrors::getEofInTag(), $errors);
@@ -866,7 +864,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BEFORE_ATTRIBUTE_VALUE:
-                    $buffer->consume(["\t", "\n", "\f", " "], $errors);
+                    $buffer->discardWhitespace();
                     switch ($read = $buffer->read($errors)) {
                         case "\"":
                             $this->setState(State::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED);
@@ -1214,7 +1212,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BEFORE_DOCTYPE_NAME:
-                    $buffer->consume(self::WHITESPACE, $errors);
+                    $buffer->discardWhitespace();
                     $this->currentDoctypeBuilder = HtmlDocTypeToken::builder();
                     switch ($buffer->read($errors)) {
                         case ">":
@@ -1270,7 +1268,7 @@ class HtmlTokenizer
                     );
                     break;
                 case State::$STATE_AFTER_DOCTYPE_NAME:
-                    $buffer->consume(self::WHITESPACE, $errors);
+                    $buffer->discardWhitespace();
                     $first = $buffer->read($errors);
                     if ($first == null) {
                         $this->parseError(ParseErrors::getEofInDoctype(), $errors);
@@ -1334,7 +1332,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER:
-                    $buffer->consume(self::WHITESPACE, $errors);
+                    $buffer->discardWhitespace();
                     $next = $buffer->read($errors);
                     if ($next == null) {
                         $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build(), $tokens);
@@ -1437,7 +1435,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS:
-                    $buffer->consume(self::WHITESPACE, $errors);
+                    $buffer->discardWhitespace();
                     $next = $buffer->read($errors);
                     if ($next == null) {
                         $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build(), $tokens);
@@ -1503,7 +1501,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER:
-                    $buffer->consume(self::WHITESPACE, $errors);
+                    $buffer->discardWhitespace();
                     $next = $buffer->read($errors);
                     if ($next == null) {
                         $this->parseError(ParseErrors::getEofInDoctype(), $errors);
@@ -1571,7 +1569,7 @@ class HtmlTokenizer
                     );
                     break;
                 case State::$STATE_AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
-                    $buffer->consume(self::WHITESPACE, $errors);
+                    $buffer->discardWhitespace();
                     $next = $buffer->read($errors);
                     if ($next == null) {
                         $this->parseError(ParseErrors::getEofInDoctype(), $errors);
