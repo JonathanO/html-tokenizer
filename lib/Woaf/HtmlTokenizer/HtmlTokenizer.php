@@ -483,7 +483,7 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_END_TAG_OPEN:
                     $next = $buffer->read($errors);
                     if (preg_match("/[a-zA-Z]/u", $next)) {
-                        $this->currentTokenBuilder = HtmlEndTagToken::builder()();
+                        $this->currentTokenBuilder = HtmlEndTagToken::builder();
                         $buffer->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA_END_TAG_NAME);
                     } else {
@@ -623,7 +623,7 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
                     $next = $buffer->read($errors);
                     if (preg_match("/[a-zA-Z]/u", $next)) {
-                        $this->currentTokenBuilder = HtmlEndTagToken::builder()();
+                        $this->currentTokenBuilder = HtmlEndTagToken::builder();
                         $buffer->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME);
                     } else {
