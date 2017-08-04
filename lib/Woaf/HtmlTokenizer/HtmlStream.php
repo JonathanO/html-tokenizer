@@ -26,6 +26,8 @@ class HtmlStream
     private $lastCur;
     private $lastCurBytes;
 
+    private $furthestConsumed = 0;
+
     private $confidence;
 
     const CONFIDENCE_CERTAIN = "certain";
@@ -55,6 +57,7 @@ class HtmlStream
 
     private function loadAndUpdateLast($save) {
         $this->updateLast();
+        $this->furthestConsumed = max($save[0], $this->furthestConsumed);
         list($this->cur, $this->curBytes) = $save;
     }
 
@@ -170,13 +173,13 @@ class HtmlStream
         $codepoints = [];
         for ($i = $this->curBytes; $chrs < $len; $i += $width) {
             list ($chr, $width, $codepoint, $error) = $this->readChar($i);
-            if ($error) {
-                $errors[] = $error;
-            }
             if ($chr === null) {
                 break;
             }
             $chrs++;
+            if ($error && $chrs + $this->cur > $this->furthestConsumed) {
+                $errors[] = $error;
+            }
             if ($chr == "\r") {
                 $lastWasCR = true;
                 $read .= "\n";
@@ -278,6 +281,7 @@ class HtmlStream
         if (preg_match('/^' . $matching . '/', substr($this->buffer, $this->curBytes), $matches)) {
             $data = $matches[0];
             $this->cur += mb_strlen($data, $this->internalEncoding);
+            $this->furthestConsumed = max($this->cur, $this->furthestConsumed);
             $this->curBytes += strlen($data);
             $data = mb_ereg_replace("\r\n?", "\n", $data);
         }

@@ -37,13 +37,39 @@ class HtmlTokenizerTest extends TestCase
         ], $tokens->getTokens());
     }
 
+    public function testNewline() {
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText("\n");
+        $this->assertEquals([
+            new HtmlCharToken("\n"),
+        ], $tokens->getTokens());
+    }
+
     public function testBasicHtml() {
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText(file_get_contents("basic.html"));
         $this->assertEquals([
-            new HtmlStartTagToken("div", false, ["class" => "foo"]),
-            new HtmlCharToken("LOL"),
-            new HtmlEndTagToken("div", false, [])
+            new HtmlDocTypeToken("html", null, null, false),
+            new HtmlCharToken("\n"),
+            new HtmlStartTagToken("html", false, ["lang" => "en"]),
+            new HtmlCharToken("\n"),
+            new HtmlStartTagToken("head", false, []),
+            new HtmlCharToken("\n    "),
+            new HtmlStartTagToken("meta", false, ["charset" => "UTF-8"]),
+            new HtmlCharToken("\n    "),
+            new HtmlStartTagToken("title", false, []),
+            new HtmlCharToken("Title"),
+            new HtmlEndTagToken("title", false, []),
+            new HtmlCharToken("\n"),
+            new HtmlEndTagToken("head", false, []),
+            new HtmlCharToken("\n"),
+            new HtmlStartTagToken("body", false, []),
+            new HtmlCharToken("OH HAI!"),
+            new HtmlStartTagToken("br", true, []),
+            new HtmlCharToken("\n"),
+            new HtmlEndTagToken("body", false, []),
+            new HtmlCharToken("\n"),
+            new HtmlEndTagToken("html", false, []),
         ], $tokens->getTokens());
     }
 

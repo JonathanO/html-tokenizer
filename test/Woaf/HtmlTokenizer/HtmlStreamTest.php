@@ -229,4 +229,17 @@ class HtmlStreamTest extends TestCase
         $this->assertEquals($badChar, $read);
     }
 
+    public function testOnlyOneErrorWhenReconsuming() {
+        $badChar = self::mb_decode_entity('&#xDFFF;');
+        $buf = new HtmlStream($badChar, "UTF-8");
+        $errors = [];
+        $read = $buf->read($errors);
+        $this->assertEquals($badChar, $read);
+        $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
+        $buf->unconsume();
+        $read = $buf->read($errors);
+        $this->assertEquals($badChar, $read);
+        $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
+    }
+
 }
