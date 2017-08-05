@@ -1,10 +1,5 @@
 <?php
-/**
- * Created by IntelliJ IDEA.
- * User: jonat
- * Date: 27/07/2017
- * Time: 23:04
- */
+
 
 namespace Woaf\HtmlTokenizer\Tables;
 
@@ -13,7 +8,7 @@ use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
 use Psr\Log\LoggerInterface;
 use Woaf\HtmlTokenizer\HtmlStream;
-use Woaf\HtmlTokenizer\ParseError;
+use Woaf\HtmlTokenizer\HtmlParseError;
 
 class CharacterReferenceDecoder implements LoggerAwareInterface
 {

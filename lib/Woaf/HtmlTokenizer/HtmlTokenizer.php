@@ -1,10 +1,5 @@
 <?php
-/**
- * Created by IntelliJ IDEA.
- * User: jonat
- * Date: 26/04/2017
- * Time: 15:02
- */
+
 
 namespace Woaf\HtmlTokenizer;
 
@@ -83,7 +78,7 @@ class HtmlTokenizer
         $tokens[] = $token;
     }
 
-    private function parseError(ParseError $error, array &$errors) {
+    private function parseError(HtmlParseError $error, array &$errors) {
         if ($this->logger) $this->logger->debug("Encountered parse error " . $error);
         $errors[] = $error;
     }
@@ -118,7 +113,7 @@ class HtmlTokenizer
         };
     }
 
-    private function getParseErrorAndContinue(ParseError $error, array &$errors) {
+    private function getParseErrorAndContinue(HtmlParseError $error, array &$errors) {
         return function($read, &$data) use (&$errors, $error) {
             $this->parseError($error, $errors);
             $data .= $read;
@@ -1592,7 +1587,7 @@ class HtmlTokenizer
                                 $this->emit($this->currentDoctypeBuilder->build(), $tokens);
                             }),
                         ],
-                        function($read, &$data) use (&$done) {
+                        function($read, &$data) use (&$done, &$tokens) {
                             $this->emit($this->currentDoctypeBuilder->build(), $tokens);
                             $done = true;
                         },

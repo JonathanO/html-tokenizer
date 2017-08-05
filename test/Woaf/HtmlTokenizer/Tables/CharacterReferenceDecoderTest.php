@@ -1,10 +1,5 @@
 <?php
-/**
- * Created by IntelliJ IDEA.
- * User: jonat
- * Date: 29/07/2017
- * Time: 11:09
- */
+
 
 namespace Woaf\HtmlTokenizer\Tables;
 
@@ -13,7 +8,7 @@ use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
 use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlStream;
-use Woaf\HtmlTokenizer\ParseError;
+use Woaf\HtmlTokenizer\HtmlParseError;
 
 class CharacterReferenceDecoderTest extends TestCase
 {

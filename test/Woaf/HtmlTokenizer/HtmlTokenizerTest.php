@@ -1,10 +1,5 @@
 <?php
-/**
- * Created by IntelliJ IDEA.
- * User: jonat
- * Date: 03/05/2017
- * Time: 17:35
- */
+
 
 namespace Woaf\HtmlTokenizer;
 
