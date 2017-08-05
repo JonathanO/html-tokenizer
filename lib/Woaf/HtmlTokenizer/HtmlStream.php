@@ -239,7 +239,7 @@ class HtmlStream
     }
 
     public function discardWhitespace() {
-        return $this->pConsume("[ \n\t\f]+");
+        return $this->pConsume("[ \n\t\f\r]+");
     }
 
     public function consumeUntil($matching, array &$errors, &$eof = false) {

@@ -24,14 +24,14 @@ class HtmlTokenizer
 {
     use LoggerAwareTrait;
 
-    private $FFFDReplacementCharacter;
+    private static $FFFDReplacementCharacter = 	"\xEF\xBF\xBD";
 
     private $entityReplacementTable;
 
     /**
-     * @var int[]
+     * @var int
      */
-    private $stack = [];
+    private $curState;
 
     /**
      * @var HtmlTagTokenBuilder
@@ -42,16 +42,6 @@ class HtmlTokenizer
      * @var HtmlDocTypeTokenBuilder
      */
     private $currentDoctypeBuilder = null;
-
-    public function enter() {
-        array_push($this->stack, $this->stack[0]);
-    }
-
-    public function leave() {
-        if (array_pop($this->stack) === null) {
-            throw new \Exception("TODO: Parse error");
-        }
-    }
     
     public function pushState($state, $lastStartTagName) {
         $this->setState($state);
@@ -59,7 +49,7 @@ class HtmlTokenizer
     }
 
     public function getState() {
-        return $this->stack[0];
+        return $this->curState;
     }
 
 
@@ -70,7 +60,7 @@ class HtmlTokenizer
             $newName = State::toName($state);
             $this->logger->debug("State change {$curName}({$curState}) => {$newName}({$state})");
         }
-        $this->stack[0] = $state;
+        $this->curState = $state;
     }
 
     private function emit(HtmlToken $token, array &$tokens) {
@@ -83,10 +73,6 @@ class HtmlTokenizer
         $errors[] = $error;
     }
 
-    private $voidElements;
-    private $rawTextElements;
-    private $escapableRawTextElements;
-    private $foreignElements;
 
     public function __construct(LoggerInterface $logger = null)
     {
@@ -94,12 +80,7 @@ class HtmlTokenizer
             $this->setLogger($logger);
         }
         $this->entityReplacementTable = new CharacterReferenceDecoder($logger);
-        $this->voidElements = array_flip(["area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr"]);
-        $this->rawTextElements = array_flip(["script", "style"]);
-        $this->escapableRawTextElements = array_flip(["textarea", "title"]);
-        $this->foreignElements = array_flip(["svg", "mathml"]); // TODO: fix namespace usage
-        $this->stack[] = State::$STATE_DATA;
-        $this->FFFDReplacementCharacter = mb_decode_numericentity("&#xFFFD;", [ 0x0, 0x10ffff, 0, 0x10ffff ]);
+        $this->curState = State::$STATE_DATA;
     }
 
     private function getBasicStateSwitcher($newState, callable $andThen = null, $doConsume = true) {
@@ -164,7 +145,7 @@ class HtmlTokenizer
         return function($read, &$data) use (&$errors)
         {
             $this->parseError(ParseErrors::getUnexpectedNullCharacter(), $errors);
-            $data .= $this->FFFDReplacementCharacter;
+            $data .= self::$FFFDReplacementCharacter;
             return true;
         };
     }
@@ -562,7 +543,7 @@ class HtmlTokenizer
                         case "\0":
                             $this->parseError(ParseErrors::getUnexpectedNullCharacter(), $errors);
                             $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
-                            $this->emit(new HtmlCharToken($this->FFFDReplacementCharacter), $tokens);
+                            $this->emit(new HtmlCharToken(self::$FFFDReplacementCharacter), $tokens);
                             break;
                         case null:
                             $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText(), $errors);
@@ -588,7 +569,7 @@ class HtmlTokenizer
                         case "\0":
                             $this->parseError(ParseErrors::getUnexpectedNullCharacter(), $errors);
                             $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
-                            $this->emit(new HtmlCharToken($this->FFFDReplacementCharacter), $tokens);
+                            $this->emit(new HtmlCharToken(self::$FFFDReplacementCharacter), $tokens);
                             break;
                         case null:
                             $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText(), $errors);
@@ -671,7 +652,6 @@ class HtmlTokenizer
                             $tempBuffer .= $read;
                             break;
                         default:
-                            // Valid if peek returns null too. I think? TODO
                             $buffer->unconsume();
                             $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                     }
@@ -701,7 +681,7 @@ class HtmlTokenizer
                     } else {
                         if ($char == "\0") {
                             $this->parseError(ParseErrors::getUnexpectedNullCharacter(), $errors);
-                            $this->emit(new HtmlCharToken($this->FFFDReplacementCharacter), $tokens);
+                            $this->emit(new HtmlCharToken(self::$FFFDReplacementCharacter), $tokens);
                         } else {
                             $this->emit(new HtmlCharToken($char), $tokens);
                         }
@@ -725,7 +705,7 @@ class HtmlTokenizer
                     } else {
                         if ($char == "\0") {
                             $this->parseError(ParseErrors::getUnexpectedNullCharacter(), $errors);
-                            $this->emit(new HtmlCharToken($this->FFFDReplacementCharacter), $tokens);
+                            $this->emit(new HtmlCharToken(self::$FFFDReplacementCharacter), $tokens);
                         } else {
                             $this->emit(new HtmlCharToken($char), $tokens);
                         }
@@ -996,7 +976,7 @@ class HtmlTokenizer
                     $this->consume($buffer,
                         [
                             ">" => $switchAndEmit,
-                            "\0" => function($read, &$data) { $data .= $this->FFFDReplacementCharacter; return true; }
+                            "\0" => function($read, &$data) { $data .= self::$FFFDReplacementCharacter; return true; }
                         ],
                         function ($read, $data) use (&$tokens, &$done) {
                             $this->emit(new HtmlCommentToken($this->comment . $data), $tokens);
@@ -1675,10 +1655,6 @@ class HtmlTokenizer
             $str = null;
         }
         return $newTokens;
-    }
-
-    private function isVoidElement($tagName) {
-        return isset($this->voidElements[$tagName]);
     }
 
 }

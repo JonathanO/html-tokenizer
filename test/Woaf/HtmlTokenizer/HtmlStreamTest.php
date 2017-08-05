@@ -182,4 +182,13 @@ class HtmlStreamTest extends TestCase
         $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
     }
 
+    public function eofUnconsume() {
+        $buf = new HtmlStream("a", "UTF-8");
+        $errors = [];
+        $buf->read($errors);
+        $this->assertNull($buf->read($errors));
+        $buf->unconsume();
+        $this->assertNull($buf->read($errors));
+    }
+
 }
