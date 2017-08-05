@@ -11,3 +11,9 @@ before_script:
 install:
   - wget -O- https://github.com/html5lib/html5lib-tests/archive/master.tar.gz | tar -zxv
   - composer install --ignore-platform-reqs
+matrix:
+  allow_failures:
+  - php: nightly
+    env: HTMLLIB5TESTS=$PWD/html5lib-tests-master/ LOGLEVEL=INFO
+  - php: hhvm-nightly
+    env: HTMLLIB5TESTS=$PWD/html5lib-tests-master/ LOGLEVEL=INFO
