@@ -13,7 +13,6 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlToken;
-use Woaf\HtmlTokenizer\Tables\CharacterReferenceDecoder;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
 
@@ -42,7 +41,7 @@ class HtmlTokenizer
      * @var HtmlDocTypeTokenBuilder
      */
     private $currentDoctypeBuilder = null;
-    
+
     public function pushState($state, $lastStartTagName) {
         $this->setState($state);
         $this->lastStartTagName = $lastStartTagName;

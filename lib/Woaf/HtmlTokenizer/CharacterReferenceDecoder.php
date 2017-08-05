@@ -1,14 +1,14 @@
 <?php
 
 
-namespace Woaf\HtmlTokenizer\Tables;
+namespace Woaf\HtmlTokenizer;
 
 
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
 use Psr\Log\LoggerInterface;
-use Woaf\HtmlTokenizer\HtmlStream;
-use Woaf\HtmlTokenizer\HtmlParseError;
+use Woaf\HtmlTokenizer\Tables\ParseErrors;
+use Woaf\HtmlTokenizer\Tables\NamedEntity;
 
 class CharacterReferenceDecoder implements LoggerAwareInterface
 {
@@ -44,8 +44,6 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             ['0x9F', 'U+0178', 'LATIN CAPITAL LETTER Y WITH DIAERESIS (Ÿ)'],
     ];
 
-    private $namedEntitiyLookup;
-
     private static $parseErrorRanges = [
         [0x0001, 0x0008],
         [0x000D, 0x001F],
@@ -61,25 +59,6 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
 
     private $lookup = null;
 
-    private function buildNamedEntityLookup()
-    {
-        $entities = json_decode(file_get_contents(__DIR__ . "/entities.json"));
-        $this->namedEntitiyLookup = [[], null];
-        foreach ($entities as $name => $data) {
-            $name = ltrim($name, "&");
-            $exploded = str_split($name);
-            $cur = &$this->namedEntitiyLookup;
-            foreach ($exploded as $char) {
-                if (!isset($cur[0][$char])) {
-                    $cur[0][$char] = [[], null];
-                }
-                $cur = &$cur[0][$char];
-            }
-            $cur[1] = $data;
-        }
-        return false;
-    }
-
     private function buildLookups()
     {
         $this->parseErrorsLookup = array_flip(self::$parseErrorsValues);
@@ -87,7 +66,6 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             $codepoint = substr($mapping[1], 2);
             $this->lookup[hexdec(substr($mapping[0], 2))] = [mb_decode_numericentity("&#x" . $codepoint . ";", [ 0x0, 0x10ffff, 0, 0x10ffff ]), $codepoint, $mapping[2]];
         }
-        $this->buildNamedEntityLookup();
     }
 
     public function consumeNumericEntity(HtmlStream $buffer) {
@@ -173,7 +151,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
 
     public function consumeNamedEntity(HtmlStream $buffer, $inAttribute) {
         $errors = [];
-        $cur = $this->namedEntitiyLookup;
+        $cur = NamedEntity::$TABLE;
         $candidate = null;
         $lastWasSemicolon = false;
         $start = $buffer->save();
@@ -207,7 +185,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
                     $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
                 }
             }
-            return [$candidate->characters, $errors];
+            return [$candidate, $errors];
         } else {
             if ($consumed > 0) {
                 $buffer->readAlnum();

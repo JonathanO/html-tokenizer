@@ -1,7 +1,7 @@
 <?php
 
 
-namespace Woaf\HtmlTokenizer\Tables;
+namespace Woaf\HtmlTokenizer;
 
 
 use Monolog\Handler\StreamHandler;
@@ -9,6 +9,7 @@ use Monolog\Logger;
 use PHPUnit\Framework\TestCase;
 use Woaf\HtmlTokenizer\HtmlStream;
 use Woaf\HtmlTokenizer\HtmlParseError;
+use Woaf\HtmlTokenizer\Tables\ParseErrors;
 
 class CharacterReferenceDecoderTest extends TestCase
 {
