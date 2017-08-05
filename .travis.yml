@@ -2,7 +2,7 @@ language: php
 php:
   - '7.0'
   - '7.1'
-  - hhvm
+  - hhvm-nightly # sadly we have to run nightly since PHPUnit will fail unless we're running >= 3.20.0
   - nightly
 env:
   - HTMLLIB5TESTS=$PWD/html5lib-tests-master/ LOGLEVEL=INFO
