@@ -222,33 +222,24 @@ class HtmlStream
         return $read;
     }
 
-    public function readOnly($matching, array &$errors) {
-        if (!is_array($matching)) {
-            $matching = preg_split("//u", $matching);
-        }
-        list($ptr, $char) = $this->peekInternal(1, $errors);
-        if (in_array($char, $matching)) {
-            $this->loadAndUpdateLast($ptr);
-            return $char;
-        }
-        return null;
+    public function readAlpha() {
+        return $this->pConsume("[a-zA-Z]+");
     }
 
-    private function consume(array $matching, array &$errors, &$eof = false) {
-        $eof = false;
-        $matchStr = "";
-        foreach ($matching as $match) {
-            $matchStr .= $match;
-            if ($match == "\n" || $match == '\n') {
-                $matchStr .= "\r";
-            }
-        }
-        return $this->pConsume('[' . preg_quote($matchStr) . ']+', $errors, $eof);
+    public function readAlnum() {
+        return $this->pConsume("[a-zA-Z0-9]+");
+    }
+
+    public function readNum() {
+        return $this->pConsume("[0-9]+");
+    }
+
+    public function readHex() {
+        return $this->pConsume("[a-fA-F0-9]+");
     }
 
     public function discardWhitespace() {
-        $errors = [];
-        $this->consume([" ", "\n", "\t", "\f"], $errors);
+        return $this->pConsume("[ \n\t\f]+");
     }
 
     public function consumeUntil($matching, array &$errors, &$eof = false) {
@@ -273,9 +264,7 @@ class HtmlStream
         return $buf;
     }
 
-    public function pConsume($matching, array &$errors, &$eof = false) {
-        // TODO errors...
-        $eof = false;
+    private function pConsume($matching) {
         $data = "";
         $this->updateLast();
         if (preg_match('/^' . $matching . '/', substr($this->buffer, $this->curBytes), $matches)) {
@@ -284,9 +273,6 @@ class HtmlStream
             $this->furthestConsumed = max($this->cur, $this->furthestConsumed);
             $this->curBytes += strlen($data);
             $data = mb_ereg_replace("\r\n?", "\n", $data);
-        }
-        if ($this->cur >= $this->bufLen) {
-            $eof = true;
         }
         return $data;
     }

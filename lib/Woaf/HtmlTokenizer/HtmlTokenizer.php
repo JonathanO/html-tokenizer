@@ -377,7 +377,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_RCDATA_END_TAG_NAME:
-                    $tempBuffer = $buffer->pConsume("[a-zA-Z]+", $errors);
+                    $tempBuffer = $buffer->readAlpha();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
@@ -430,7 +430,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_RAWTEXT_END_TAG_NAME:
-                    $tempBuffer = $buffer->pConsume("[a-zA-Z]+", $errors);
+                    $tempBuffer = $buffer->readAlpha();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
@@ -486,7 +486,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_END_TAG_NAME:
-                    $tempBuffer = $buffer->pConsume("[a-zA-Z]+", $errors);
+                    $tempBuffer = $buffer->readAlpha();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
@@ -626,7 +626,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME:
-                    $tempBuffer = $buffer->pConsume("[a-zA-Z]+", $errors);
+                    $tempBuffer = $buffer->readAlpha();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         $this->emit(new HtmlCharToken("</" . $tempBuffer), $tokens);
@@ -654,7 +654,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START:
-                    $tempBuffer = $buffer->pConsume("[a-zA-Z]+", $errors);
+                    $tempBuffer = $buffer->readAlpha();
                     switch ($read = $buffer->read($errors)) {
                         case " ":
                         case "\t":
@@ -754,7 +754,7 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END:
-                    $tempBuffer = $buffer->pConsume("[a-zA-Z]+", $errors);
+                    $tempBuffer = $buffer->readAlpha();
                     switch ($read = $buffer->read($errors)) {
                         case " ":
                         case "\t":

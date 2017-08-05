@@ -24,18 +24,6 @@ class HtmlStreamTest extends TestCase
         $this->assertEmpty($errors);
     }
 
-    public function testReadOnly() {
-        $buf = new HtmlStream("twas", "UTF-8");
-        $errors = [];
-        $this->assertEquals("t", $buf->readOnly('t', $errors));
-        $this->assertEquals("w", $buf->readOnly('w', $errors));
-        $this->assertEquals(null, $buf->readOnly('w', $errors));
-        $this->assertEquals("a", $buf->readOnly(['a','s'], $errors));
-        $this->assertEquals("s", $buf->readOnly(['a','s'], $errors));
-        $this->assertEquals(null, $buf->readOnly(' ', $errors));
-        $this->assertEmpty($errors);
-    }
-
     public function testConsumeUntil() {
         $buf = new HtmlStream("twas ", "UTF-8");
         $errors = [];
@@ -73,21 +61,6 @@ class HtmlStreamTest extends TestCase
         $this->assertEquals("\n", $buf->read($errors));
         $this->assertEquals("s", $buf->read($errors));
         $this->assertEquals(null, $buf->read($errors));
-        $this->assertEmpty($errors);
-    }
-
-    public function testReadOnlyCr() {
-        $buf = new HtmlStream("tw\r\rw\r\ns", "UTF-8");
-        $errors = [];
-        $this->assertEquals("t", $buf->readOnly('t', $errors));
-        $this->assertEquals("w", $buf->readOnly("w\n", $errors));
-        $this->assertEquals(null, $buf->readOnly("\r", $errors));
-        $this->assertEquals("\n", $buf->readOnly("w\n", $errors));
-        $this->assertEquals("\n", $buf->readOnly("w\n", $errors));
-        $this->assertEquals("w", $buf->readOnly("w\n", $errors));
-        $this->assertEquals("\n", $buf->readOnly("w\n", $errors));
-        $this->assertEquals(null, $buf->readOnly("w\n", $errors));
-        $this->assertEquals("s", $buf->readOnly('s', $errors));
         $this->assertEmpty($errors);
     }
 

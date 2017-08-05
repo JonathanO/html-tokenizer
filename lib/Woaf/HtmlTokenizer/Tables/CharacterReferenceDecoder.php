@@ -93,10 +93,10 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
     public function consumeNumericEntity(HtmlStream $buffer) {
         $errors = [];
         $buffer->read($errors);
-        $next = $buffer->readOnly(["x", "X"], $errors);
+        $next = $buffer->read($errors);
         $number = null;
-        if ($next) {
-            $hex = $buffer->pConsume("[0-9a-fA-F]+", $errors);
+        if ($next == "x" || $next == "X") {
+            $hex = $buffer->readHex();
             if ($hex === "") {
                 $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference();
                 if ($this->logger) $this->logger->debug("Failed to consume any hex digits in hex numeric char ref");
@@ -105,7 +105,8 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             if ($this->logger) $this->logger->debug("Consumed hex char ref $hex");
             $number = hexdec($hex);
         } else {
-            $number = $buffer->pConsume("[0-9]+", $errors);
+            $buffer->unconsume();
+            $number = $buffer->readNum();
             if ($number === "") {
                 $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference();
                 if ($this->logger) $this->logger->debug("Failed to consume any decimal digits in decimal numeric char ref");
@@ -117,7 +118,8 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             }
             if ($this->logger) $this->logger->debug("Consumed decimal char ref $number");
         }
-        if (!$buffer->readOnly(";", $errors)) {
+        if ($buffer->read($errors) != ";") {
+            $buffer->unconsume();
             $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
         }
         if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
@@ -193,9 +195,9 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
                 if ($inAttribute) {
                     $next = $buffer->peek();
                     if ($next == "=" || preg_match('/[A-Za-z0-9]/', $next)) {
-                        if ($next == "=") {
-                            $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
-                        }
+                        //if ($next == "=") {
+                            //$errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                        //}
                         $buffer->load($start); // Unconsume everything. Sigh.
                         return ["&", $errors];
                     } else {
@@ -208,7 +210,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             return [$candidate->characters, $errors];
         } else {
             if ($consumed > 0) {
-                $buffer->pConsume("[a-zA-Z0-9]+", $errors);
+                $buffer->readAlnum();
                 if ($buffer->peek() == ";") {
                     $errors[] = ParseErrors::getUnknownNamedCharacterReference();
                 }
