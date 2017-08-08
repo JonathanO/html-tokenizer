@@ -7,6 +7,7 @@ namespace Woaf\HtmlTokenizer;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
 use Psr\Log\LoggerInterface;
+use Woaf\HtmlTokenizer\HtmlTokens\Builder\ErrorReceiver;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\NamedEntity;
 
@@ -68,17 +69,16 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         }
     }
 
-    public function consumeNumericEntity(HtmlStream $buffer) {
-        $errors = [];
-        $buffer->read($errors);
-        $next = $buffer->read($errors);
+    public function consumeNumericEntity(HtmlStream $buffer, ErrorReceiver $receiver) {
+        $buffer->read($receiver);
+        $next = $buffer->read($receiver);
         $number = null;
         if ($next == "x" || $next == "X") {
             $hex = $buffer->readHex();
             if ($hex === "") {
-                $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference();
+                $receiver->error(ParseErrors::getAbsenceOfDigitsInNumericCharacterReference());
                 if ($this->logger) $this->logger->debug("Failed to consume any hex digits in hex numeric char ref");
-                return ["&#$next", $errors];
+                return "&#$next";
             }
             if ($this->logger) $this->logger->debug("Consumed hex char ref $hex");
             $number = hexdec($hex);
@@ -86,9 +86,9 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             $buffer->unconsume();
             $number = $buffer->readNum();
             if ($number === "") {
-                $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference();
+                $receiver->error(ParseErrors::getAbsenceOfDigitsInNumericCharacterReference());
                 if ($this->logger) $this->logger->debug("Failed to consume any decimal digits in decimal numeric char ref");
-                return ["&#", $errors];
+                return "&#";
             }
             $number = ltrim($number, "0");
             if ($number == "") {
@@ -96,45 +96,45 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             }
             if ($this->logger) $this->logger->debug("Consumed decimal char ref $number");
         }
-        if ($buffer->read($errors) != ";") {
+        if ($buffer->read($receiver) != ";") {
             $buffer->unconsume();
-            $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+            $receiver->error(ParseErrors::getMissingSemicolonAfterCharacterReference());
         }
         if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
             if ($number > 0x10FFFF) {
-                $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
+                $receiver->error(ParseErrors::getCharacterReferenceOutsideUnicodeRange());
             } else {
-                $errors[] = ParseErrors::getSurrogateCharacterReference();
+                $receiver->error(ParseErrors::getSurrogateCharacterReference());
             }
             $remapping = $this->lookup[0];
             if ($this->logger) $this->logger->debug("Found reference $number in bad range, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
-            return [$remapping[0], $errors];
+            return $remapping[0];
         }
         if (isset($this->lookup[$number])) {
             $remapping = $this->lookup[$number];
             if ($this->logger) $this->logger->debug("Found disallowed reference $number, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
             if ($number == 0) {
-                $errors[] = ParseErrors::getNullCharacterReference();
+                $receiver->error(ParseErrors::getNullCharacterReference());
             } else {
-                $errors[] = ParseErrors::getControlCharacterReference();
+                $receiver->error(ParseErrors::getControlCharacterReference());
             }
-            return [$remapping[0], $errors];
+            return $remapping[0];
         } else {
             if (isset($this->parseErrorsLookup[$number])) {
                 if ($this->logger) $this->logger->debug("Found bad codepoint $number, using anyway");
                 if ($number == 0x000B) {
-                    $errors[] = ParseErrors::getControlCharacterReference();
+                    $receiver->error(ParseErrors::getControlCharacterReference());
                 } else {
-                    $errors[] = ParseErrors::getNoncharacterCharacterReference();
+                    $receiver->error(ParseErrors::getNoncharacterCharacterReference());
                 }
             } else {
                 foreach (self::$parseErrorRanges as $range) {
                     if ($number >= $range[0] && $number <= $range[1]) {
                         if ($this->logger) $this->logger->debug("Found codepoint $number in bad range ({$range[0]} - {$range[1]}), using anyway");
                         if ($number >= 0xFDD0) {
-                            $errors[] = ParseErrors::getNoncharacterCharacterReference();
+                            $receiver->error(ParseErrors::getNoncharacterCharacterReference());
                         } else {
-                            $errors[] = ParseErrors::getControlCharacterReference();
+                            $receiver->error(ParseErrors::getControlCharacterReference());
                         }
                         break;
                     } elseif ($number <= $range[1]) {
@@ -145,12 +145,11 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             }
             $char = mb_decode_numericentity("&#" . $number . ";", [0x0, 0x10ffff, 0, 0x10ffff]);
             if ($this->logger) $this->logger->debug("Decoding codepoint $number to $char");
-            return [$char, $errors];
+            return $char;
         }
     }
 
-    public function consumeNamedEntity(HtmlStream $buffer, $inAttribute) {
-        $errors = [];
+    public function consumeNamedEntity(HtmlStream $buffer, $inAttribute, ErrorReceiver $receiver) {
         $cur = NamedEntity::$TABLE;
         $candidate = null;
         $lastWasSemicolon = false;
@@ -158,7 +157,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         $buffer->mark();
         $consumed = 0;
         for ($chr = $buffer->peek(); $chr != null && isset($cur[0][$chr]); $chr = $buffer->peek()) {
-            $buffer->read($errors);
+            $buffer->read($receiver);
             $consumed++;
             $cur = $cur[0][$chr];
             if ($cur[1] != null) {
@@ -174,37 +173,37 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
                     $next = $buffer->peek();
                     if ($next == "=" || preg_match('/[A-Za-z0-9]/', $next)) {
                         //if ($next == "=") {
-                            //$errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                            //$receiver->error(ParseErrors::getMissingSemicolonAfterCharacterReference());
                         //}
                         $buffer->load($start); // Unconsume everything. Sigh.
-                        return ["&", $errors];
+                        return "&";
                     } else {
-                        $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                        $receiver->error(ParseErrors::getMissingSemicolonAfterCharacterReference());
                     }
                 } else {
-                    $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                    $receiver->error(ParseErrors::getMissingSemicolonAfterCharacterReference());
                 }
             }
-            return [$candidate, $errors];
+            return $candidate;
         } else {
             if ($consumed > 0) {
                 $buffer->readAlnum();
                 if ($buffer->peek() == ";") {
-                    $errors[] = ParseErrors::getUnknownNamedCharacterReference();
+                    $receiver->error(ParseErrors::getUnknownNamedCharacterReference());
                 }
                 $buffer->reset();
             }
-            return ["&", $errors];
+            return "&";
         }
     }
 
-    public function consumeCharRef(HtmlStream $buffer, $additionalAllowedChar = null, $inAttribute = false) {
+    public function consumeCharRef(HtmlStream $buffer, ErrorReceiver $receiver, $additionalAllowedChar = null, $inAttribute = false) {
         $peeked = $buffer->peek();
         if ($peeked === null) {
-            return ["&", []];
+            return "&";
         }
         if ($additionalAllowedChar !== null && $peeked == $additionalAllowedChar) {
-            return ["&", []];
+            return "&";
         }
         switch ($peeked) {
             case "\t":
@@ -213,11 +212,11 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             case " ":
             case "<":
             case "&":
-                return ["&", []];
+                return "&";
             case "#":
-                return $this->consumeNumericEntity($buffer);
+                return $this->consumeNumericEntity($buffer, $receiver);
             default:
-                return $this->consumeNamedEntity($buffer, $inAttribute);
+                return $this->consumeNamedEntity($buffer, $inAttribute, $receiver);
         }
     }
 

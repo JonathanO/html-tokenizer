@@ -1,5 +1,10 @@
 <?php
-
+/**
+ * Created by IntelliJ IDEA.
+ * User: jonat
+ * Date: 27/07/2017
+ * Time: 17:56
+ */
 
 namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
@@ -9,12 +14,12 @@ use Woaf\HtmlTokenizer\Tables\ParseErrors;
 
 class HtmlEndTagTokenBuilder extends HtmlTagTokenBuilder
 {
-    public function build(array &$errors) {
+    public function build(ErrorReceiver $receiver) {
         if ($this->isSelfClosing) {
-            $errors[] = ParseErrors::getEndTagWithTrailingSolidus();
+            $receiver->error(ParseErrors::getEndTagWithTrailingSolidus());
         }
         if ($this->attributes != []) {
-            $errors[] = ParseErrors::getEndTagWithAttributes();
+            $receiver->error($errors[] = ParseErrors::getEndTagWithAttributes());
         }
         return new HtmlEndTagToken($this->name, false, []);
     }

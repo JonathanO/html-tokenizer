@@ -3,7 +3,6 @@
 
 namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
-
 abstract class HtmlTagTokenBuilder
 {
     protected $name = "";
@@ -84,5 +83,5 @@ abstract class HtmlTagTokenBuilder
         return $this;
     }
 
-    abstract public function build(array &$errors);
+    abstract public function build(ErrorReceiver $receiver);
 }

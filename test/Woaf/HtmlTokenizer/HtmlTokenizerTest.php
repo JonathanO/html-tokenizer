@@ -29,7 +29,7 @@ class HtmlTokenizerTest extends TestCase
 
 
     private function getTokenizer() {
-        return new HtmlTokenizer(new Logger("HtmlTokenizerTest", [new StreamHandler(STDOUT, self::getLogger())], [new IntrospectionProcessor()]));
+        return new TokenStreamingTokenizer(new Logger("HtmlTokenizerTest", [new StreamHandler(STDOUT, self::getLogger())], [new IntrospectionProcessor()]));
     }
     
     public function testBasicElement() {
@@ -231,4 +231,16 @@ class HtmlTokenizerTest extends TestCase
             new HtmlDocTypeToken("html", "aBc", "xYz", false)], $tokens->getTokens());
         $this->assertEquals([], $tokens->getErrors());
     }
+
+    public function testCDATAEof()
+    {
+        $text = "foo&bar";
+        $parser = $this->getTokenizer();
+        $parser->pushState(State::$STATE_CDATA_SECTION, null);
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+            new HtmlCharToken("foo&bar")], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getEofInCdata()], $tokens->getErrors());
+    }
+
 }

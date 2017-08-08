@@ -15,6 +15,7 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
+use Woaf\HtmlTokenizer\TokenStreamingTokenizer;
 
 /**
  * @backupGlobals disabled
@@ -97,7 +98,7 @@ class Html5LibTest extends TestCase
             $logLevel = "DEBUG";
         }
 
-        $tokenizer = new HtmlTokenizer(new Logger("html5libtest", [new StreamHandler(STDOUT, constant("Monolog\Logger::$logLevel"))], [new IntrospectionProcessor()]));
+        $tokenizer = new TokenStreamingTokenizer(new Logger("html5libtest", [new StreamHandler(STDOUT, constant("Monolog\Logger::$logLevel"))], [new IntrospectionProcessor()]));
         $lastStartTagName = null;
         if (isset($test->lastStartTag)) {
             $lastStartTagName = $test->lastStartTag;
