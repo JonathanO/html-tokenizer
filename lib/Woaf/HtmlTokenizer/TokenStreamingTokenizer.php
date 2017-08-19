@@ -36,14 +36,21 @@ class TokenStreamingTokenizer
     }
 
     public function parseText($text) {
-        $r = new TSTReceiver($this->logger);
         $s = new HtmlStream($text, "UTF-8");
-        $p = new HtmlTokenizer($s, $r, $this->logger);
+        $p = new HtmlTokenizer($s, $this->logger);
         if ($this->st) {
             $p->pushState($this->st[0], $this->st[1]);
         }
-        $p->parse();
-        return new TokenizerResult($this->compressTokens($r->getTokens()), $r->getErrors());
+        $toks = [];
+        $errors = [];
+        foreach ($p->parse() as $t) {
+            if ($t instanceof HtmlToken) {
+                $toks[] = $t;
+            } else {
+                $errors[] = $t;
+            }
+        };
+        return new TokenizerResult($this->compressTokens($toks), $errors);
     }
 
     private function compressTokens($tokens) {

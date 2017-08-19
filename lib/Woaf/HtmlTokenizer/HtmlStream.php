@@ -3,7 +3,6 @@
 
 namespace Woaf\HtmlTokenizer;
 
-use Woaf\HtmlTokenizer\HtmlTokens\Builder\ErrorReceiver;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 
 class HtmlStream
@@ -161,7 +160,7 @@ class HtmlStream
         return [$chr, $width, $codepoint, $error];
     }
 
-    private function peekInternal($len = 1, ErrorReceiver $receiver = null) {
+    private function peekInternal($len = 1, array &$errors = null) {
         $chrs = 0;
         $read = null;
         $lastWasCR = false;
@@ -173,8 +172,8 @@ class HtmlStream
                 break;
             }
             $chrs++;
-            if ($receiver && $error && $chrs + $this->cur > $this->furthestConsumed) {
-                $receiver->error($error);
+            if ($errors !== null && $error && $chrs + $this->cur > $this->furthestConsumed) {
+                $errors[] = $error;
             }
             if ($chr == "\r") {
                 $lastWasCR = true;
@@ -217,8 +216,8 @@ class HtmlStream
         return $next === $matching;
     }
 
-    public function read(ErrorReceiver $receiver, $len = 1) {
-        list($ptr, $read) = $this->peekInternal($len, $receiver);
+    public function read(array &$errors, $len = 1) {
+        list($ptr, $read) = $this->peekInternal($len, $errors);
         $this->loadAndUpdateLast($ptr);
         return $read;
     }
@@ -243,7 +242,7 @@ class HtmlStream
         return $this->pConsume("[ \n\t\f\r]+");
     }
 
-    public function consumeUntil($matching, ErrorReceiver $receiver, &$eof = false) {
+    public function consumeUntil($matching, &$errors, &$eof = false) {
         $eof = false;
         if (!is_array($matching)) {
             $matching = preg_split("//u", $matching);
@@ -251,7 +250,7 @@ class HtmlStream
         $matcher = array_flip($matching);
         $buf = "";
         while (true) {
-            list($ptr, $char) = $this->peekInternal(1, $receiver);
+            list($ptr, $char) = $this->peekInternal(1, $errors);
             if ($char === null) {
                 $eof = true;
                 break;

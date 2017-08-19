@@ -3,8 +3,14 @@
 
 namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
-abstract class HtmlTagTokenBuilder
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerAwareTrait;
+use Psr\Log\LoggerInterface;
+
+abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
 {
+    use LoggerAwareTrait;
+
     protected $name = "";
     protected $isSelfClosing = false;
     protected $attributes = [];
@@ -13,6 +19,11 @@ abstract class HtmlTagTokenBuilder
 
     private $currentAttributeName;
     private $currentAttributeValue;
+
+    public function __construct(LoggerInterface $logger = null)
+    {
+        $this->logger = $logger;
+    }
 
     public function setName($name) {
         $this->name = $name;
@@ -52,6 +63,9 @@ abstract class HtmlTagTokenBuilder
         if ($this->hasAttribute($name)) {
             throw new \Exception("Duplicate attribute name");
         }
+        if ($this->logger) {
+            $this->logger->debug("Added attribute name " . $name);
+        }
         $this->lastAttribute = $name;
         $this->attributes[$name] = "";
         return $this;
@@ -78,10 +92,13 @@ abstract class HtmlTagTokenBuilder
         if (!isset($this->lastAttribute)) {
             throw new \Exception("No open attribute!");
         }
+        if ($this->logger) {
+            $this->logger->debug("Added attribute value " . $value);
+        }
         $this->attributes[$this->lastAttribute] = $value;
         $this->lastAttribute = null;
         return $this;
     }
 
-    abstract public function build(ErrorReceiver $receiver);
+    abstract public function build(array &$errors);
 }

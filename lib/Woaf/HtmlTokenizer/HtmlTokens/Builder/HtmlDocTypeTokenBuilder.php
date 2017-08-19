@@ -4,10 +4,15 @@
 namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
 
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerAwareTrait;
+use Psr\Log\LoggerInterface;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 
-class HtmlDocTypeTokenBuilder
+class HtmlDocTypeTokenBuilder implements LoggerAwareInterface
 {
+    use LoggerAwareTrait;
+
     /**
      * @var string
      */
@@ -27,6 +32,12 @@ class HtmlDocTypeTokenBuilder
      * @var boolean
      */
     private $forceQuirks = false;
+
+    public function __construct(LoggerInterface $logger = null)
+    {
+        $this->logger = $logger;
+    }
+
 
     /**
      * @param string $name

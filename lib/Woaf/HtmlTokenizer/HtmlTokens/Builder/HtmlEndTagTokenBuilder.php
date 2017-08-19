@@ -9,17 +9,23 @@
 namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 
 
+use Psr\Log\LoggerInterface;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 
 class HtmlEndTagTokenBuilder extends HtmlTagTokenBuilder
 {
-    public function build(ErrorReceiver $receiver) {
+    public function __construct(LoggerInterface $logger = null)
+    {
+        parent::__construct($logger);
+    }
+
+    public function build(array &$errors) {
         if ($this->isSelfClosing) {
-            $receiver->error(ParseErrors::getEndTagWithTrailingSolidus());
+            $errors[] = ParseErrors::getEndTagWithTrailingSolidus();
         }
         if ($this->attributes != []) {
-            $receiver->error($errors[] = ParseErrors::getEndTagWithAttributes());
+            $errors[] = ParseErrors::getEndTagWithAttributes();
         }
         return new HtmlEndTagToken($this->name, false, []);
     }

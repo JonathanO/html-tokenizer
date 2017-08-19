@@ -4,6 +4,7 @@
 namespace Woaf\HtmlTokenizer\HtmlTokens;
 
 
+use Psr\Log\LoggerInterface;
 use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlDocTypeTokenBuilder;
 
 class HtmlDocTypeToken implements HtmlToken
@@ -75,8 +76,8 @@ class HtmlDocTypeToken implements HtmlToken
         return $this->forceQuirks;
     }
 
-    public static function builder() {
-        return new HtmlDocTypeTokenBuilder();
+    public static function builder(LoggerInterface $logger = null) {
+        return new HtmlDocTypeTokenBuilder($logger);
     }
 
     public function __toString() {
