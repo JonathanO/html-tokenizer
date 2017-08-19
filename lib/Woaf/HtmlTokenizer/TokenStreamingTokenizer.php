@@ -76,56 +76,5 @@ class TokenStreamingTokenizer
         }
         return $newTokens;
     }
-}
-
-class TSTReceiver implements TokenReceiver {
-
-    private $tokens = [];
-    private $errors = [];
-
-    private $logger;
-
-    /**
-     * TSTReceiver constructor.
-     * @param LoggerInterface $logger
-     */
-    public function __construct(LoggerInterface $logger)
-    {
-        $this->logger = $logger;
-    }
-
-
-    public function consume(HtmlToken $token, TokenizerState $state)
-    {
-        $this->tokens[] = $token;
-    }
-
-    public function error(HtmlTokenizerError $error, TokenizerState $state)
-    {
-        $this->errors[] = $error;
-    }
-
-    public function endOfStream(TokenizerState $state)
-    {
-        // TODO: Implement endOfStream() method.
-    }
-
-    /**
-     * @return array
-     */
-    public function getTokens(): array
-    {
-        return $this->tokens;
-    }
-
-    /**
-     * @return array
-     */
-    public function getErrors(): array
-    {
-        return $this->errors;
-    }
-
-
 
 }
