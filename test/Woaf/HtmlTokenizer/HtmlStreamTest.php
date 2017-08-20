@@ -9,8 +9,9 @@ use Woaf\HtmlTokenizer\Tables\ParseErrors;
 
 class HtmlStreamTest extends TestCase
 {
+
     public function testRead() {
-        $buf = new HtmlStream("twas b", "UTF-8");
+        $buf = new HtmlStreamSimple("twas b", "UTF-8");
         $errors = [];
         $this->assertEquals("t", $buf->read($errors));
         $this->assertEquals("w", $buf->read($errors));
@@ -25,7 +26,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testConsumeUntil() {
-        $buf = new HtmlStream("twas ", "UTF-8");
+        $buf = new HtmlStreamSimple("twas ", "UTF-8");
         $errors = [];
         $eof = true;
         $this->assertEquals("", $buf->consumeUntil('t', $errors, $eof));
@@ -40,7 +41,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testIsNext() {
-        $buf = new HtmlStream("twas ", "UTF-8");
+        $buf = new HtmlStreamSimple("twas ", "UTF-8");
         $errors = [];
         $this->assertTrue($buf->isNext("t"));
         $this->assertTrue($buf->isNext(["w", "t"]));
@@ -52,7 +53,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testReadCr() {
-        $buf = new HtmlStream("t\r\rw\r\ns", "UTF-8");
+        $buf = new HtmlStreamSimple("t\r\rw\r\ns", "UTF-8");
         $errors = [];
         $this->assertEquals("t", $buf->read($errors));
         $this->assertEquals("\n", $buf->read($errors));
@@ -65,7 +66,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testConsumeUntilCrDoesntStop() {
-        $buf = new HtmlStream("tw\r\rw\r\ns", "UTF-8");
+        $buf = new HtmlStreamSimple("tw\r\rw\r\ns", "UTF-8");
         $errors = [];
         $eof = true;
         $this->assertEquals("tw\n\nw\ns", $buf->consumeUntil("\r", $errors, $eof));
@@ -74,7 +75,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testConsumeUntilConvertsCrStopsAtNL() {
-        $buf = new HtmlStream("tw\r\rw\r\ns", "UTF-8");
+        $buf = new HtmlStreamSimple("tw\r\rw\r\ns", "UTF-8");
         $errors = [];
         $eof = true;
         $this->assertEquals("tw", $buf->consumeUntil("\n", $errors, $eof));
@@ -92,7 +93,7 @@ class HtmlStreamTest extends TestCase
 
 
     public function testIsNextCr() {
-        $buf = new HtmlStream("\rw\r\ns", "UTF-8");
+        $buf = new HtmlStreamSimple("\rw\r\ns", "UTF-8");
         $errors = [];
         $this->assertEquals([1, 0], $buf->getLineAndColumn());
         $this->assertFalse($buf->isNext("\r"));
@@ -110,7 +111,7 @@ class HtmlStreamTest extends TestCase
 
     public function testControlCharInStream() {
         $badChar = json_decode('"\u0003"');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->read($errors));
         $this->assertEquals([ParseErrors::getControlCharacterInInputStream(1, 1)], $errors);
@@ -118,7 +119,7 @@ class HtmlStreamTest extends TestCase
 
     public function testControlCharInStreamConsumeUntil() {
         $badChar = json_decode('"\u0003"');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->consumeUntil("a", $errors));
         $this->assertEquals([ParseErrors::getControlCharacterInInputStream(1, 1)], $errors);
@@ -126,7 +127,7 @@ class HtmlStreamTest extends TestCase
 
     public function testSpecificallyEvilCharInStream() {
         $badChar = json_decode('"\u000B"');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->read($errors));
         $this->assertEquals([ParseErrors::getControlCharacterInInputStream(1, 1)], $errors);
@@ -138,7 +139,7 @@ class HtmlStreamTest extends TestCase
 
     public function testEyeOfTheBasilisk() {
         $badChar = json_decode('"\uFDD0"');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors, 2);
         $this->assertEquals([ParseErrors::getNoncharacterInInputStream(1, 1)], $errors);
@@ -147,7 +148,7 @@ class HtmlStreamTest extends TestCase
 
     public function testValidUnicodeChar() {
         $badChar = json_decode('"\uDB3F\uDFFD"');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors, 2);
         $this->assertEquals([], $errors);
@@ -156,7 +157,7 @@ class HtmlStreamTest extends TestCase
 
     public function testSurrogateChar() {
         $badChar = self::mb_decode_entity('&#xDFFF;');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
@@ -165,7 +166,7 @@ class HtmlStreamTest extends TestCase
 
     public function testValidB1UnicodeChar() {
         $badChar = json_decode('"\u00B1"');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors, 2);
         $this->assertEquals([], $errors);
@@ -174,7 +175,7 @@ class HtmlStreamTest extends TestCase
 
     public function testOnlyOneErrorWhenReconsuming() {
         $badChar = self::mb_decode_entity('&#xDFFF;');
-        $buf = new HtmlStream($badChar, "UTF-8");
+        $buf = new HtmlStreamSimple($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
@@ -186,7 +187,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testEofUnconsume() {
-        $buf = new HtmlStream("a", "UTF-8");
+        $buf = new HtmlStreamSimple("a", "UTF-8");
         $errors = [];
         $buf->read($errors);
         $this->assertNull($buf->read($errors));
@@ -195,7 +196,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testEofColumn() {
-        $buf = new HtmlStream("a", "UTF-8");
+        $buf = new HtmlStreamSimple("a", "UTF-8");
         $errors = [];
         $this->assertEquals([1, 0], $buf->getLineAndColumn());
         $this->assertEquals("a", $buf->read($errors));
@@ -207,7 +208,7 @@ class HtmlStreamTest extends TestCase
     }
 
     public function testEofColumnConsume() {
-        $buf = new HtmlStream("a", "UTF-8");
+        $buf = new HtmlStreamSimple("a", "UTF-8");
         $errors = [];
         $this->assertEquals([1, 0], $buf->getLineAndColumn());
         $this->assertEquals("a", $buf->readAlpha());
@@ -218,5 +219,33 @@ class HtmlStreamTest extends TestCase
         $this->assertEquals([1, 2], $buf->getLineAndColumn());
     }
 
+
+}
+
+class HtmlStreamSimple {
+
+    private $stream;
+
+    public function __construct($buf, $forcedEncoding) {
+        $this->stream = new HtmlStream($buf, $forcedEncoding);
+    }
+
+    public function consumeUntil($matching, &$errors, &$eof = null) {
+        $gen = $this->stream->consumeUntil($matching, $eof);
+        $errors = iterator_to_array($gen);
+        return $gen->getReturn();
+    }
+
+    public function read(&$errors, $len = 1) {
+        $gen = $this->stream->read($len);
+        foreach ($gen as $err) {
+            $errors[] = $err;
+        }
+        return $gen->getReturn();
+    }
+
+    public function __call($name, $args) {
+        return call_user_func_array(array($this->stream, $name), $args);
+    }
 
 }

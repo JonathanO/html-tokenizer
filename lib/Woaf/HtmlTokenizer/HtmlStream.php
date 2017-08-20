@@ -171,7 +171,11 @@ class HtmlStream
         return ($this->cur->curBytes > $this->bufLenBytes);
     }
 
-    private function peekInternal($len = 1, array &$errors = null) {
+    /**
+     * @param int $len
+     * @return \Generator
+     */
+    private function peekInternal($len = 1) {
         $read = null;
         $lastWasCR = false;
         $chr = null;
@@ -186,8 +190,8 @@ class HtmlStream
         for (; $ptr->cur < $finalOffset; $ptr->curBytes += $width) {
             list ($chr, $width, $codepoint, $error) = $this->readChar($ptr);
             $ptr->cur++;
-            if ($errors !== null && $error && $ptr->cur > $this->furthestConsumed) {
-                $errors[] = $error;
+            if ($error && $ptr->cur > $this->furthestConsumed) {
+                yield $error;
             }
             if ($chr === null) {
                 $ptr->col++;
@@ -227,7 +231,9 @@ class HtmlStream
     }
 
     public function peek($len = 1) {
-        return $this->peekInternal($len)[1];
+        $gen = $this->peekInternal($len);
+        foreach ($gen as $noop);
+        return $gen->getReturn()[1];
     }
 
     public function isNext($matching) {
@@ -238,8 +244,8 @@ class HtmlStream
         return $next === $matching;
     }
 
-    public function read(array &$errors, $len = 1) {
-        list($ptr, $read) = $this->peekInternal($len, $errors);
+    public function read($len = 1) {
+        list($ptr, $read) = (yield from $this->peekInternal($len));
         $this->loadAndUpdateLast($ptr);
         return $read;
     }
@@ -264,7 +270,12 @@ class HtmlStream
         return $this->pConsume("[ \n\t\f\r]+");
     }
 
-    public function consumeUntil($matching, &$errors, &$eof = false) {
+    /**
+     * @param $matching
+     * @param bool $eof
+     * @return \Generator
+     */
+    public function consumeUntil($matching, &$eof = false) {
         $eof = false;
         if (!is_array($matching)) {
             $matching = preg_split("//u", $matching);
@@ -272,7 +283,7 @@ class HtmlStream
         $matcher = array_flip($matching);
         $buf = "";
         while (true) {
-            list($ptr, $char) = $this->peekInternal(1, $errors);
+            list($ptr, $char) = (yield from $this->peekInternal(1));
             if ($char === null) {
                 $this->loadAndUpdateLast($ptr);
                 $eof = true;

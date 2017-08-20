@@ -27,35 +27,43 @@ class CharacterReferenceDecoderTest extends TestCase
         new Logger("CharacterReferenceDecoderTest", [new StreamHandler(STDOUT, $level)]);
     }
 
+    private function bundle(\Generator $gen) {
+        $errors = [];
+        foreach ($gen as $err) {
+            $errors[] = $err;
+        }
+        return [$gen->getReturn(), $errors];
+    }
+
     public function testNotANamedEntity()
     {
         $decoder = new CharacterReferenceDecoder();
-        $this->assertEquals(["&", []], $decoder->consumeCharRef(new HtmlStream("&foo;", "UTF-8")));
+        $this->assertEquals(["&", []], $this->bundle($decoder->consumeCharRef(new HtmlStream("&foo;", "UTF-8"))));
     }
 
     public function testInvalidNumericEntity()
     {
         $decoder = new CharacterReferenceDecoder(self::getLogger());
-        $decoded = $decoder->consumeCharRef(new HtmlStream("#x3ffff;", "UTF-8"));
-        $this->assertEquals([json_decode('"\uD8BF\uDFFF"'), [ParseErrors::getNoncharacterCharacterReference()]], $decoded);
+        $decoded = $this->bundle($decoder->consumeCharRef(new HtmlStream("#x3ffff;", "UTF-8")));
+        $this->assertEquals([json_decode('"\uD8BF\uDFFF"'), [ParseErrors::getNoncharacterCharacterReference(1, 8)]], $decoded);
     }
 
     public function testJustAHash()
     {
         $decoder = new CharacterReferenceDecoder(self::getLogger());
-        $decoded = $decoder->consumeCharRef(new HtmlStream("#", "UTF-8"));
-        $this->assertEquals(['&#', [ParseErrors::getAbsenceOfDigitsInNumericCharacterReference()]], $decoded);
+        $decoded = $this->bundle($decoder->consumeCharRef(new HtmlStream("#", "UTF-8")));
+        $this->assertEquals(['&#', [ParseErrors::getAbsenceOfDigitsInNumericCharacterReference(1, 1)]], $decoded);
     }
 
     public function testNull() {
         $decoder = new CharacterReferenceDecoder(self::getLogger());
-        $decoded = $decoder->consumeCharRef(new HtmlStream("#0000;", "UTF-8"));
-        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [ParseErrors::getNullCharacterReference()]], $decoded);
+        $decoded = $this->bundle($decoder->consumeCharRef(new HtmlStream("#0000;", "UTF-8")));
+        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [ParseErrors::getNullCharacterReference(1, 6)]], $decoded);
     }
 
     public function testLoltasticEntity() {
         $decoder = new CharacterReferenceDecoder(self::getLogger());
-        $decoded = $decoder->consumeCharRef(new HtmlStream("#x10000000000000041;", "UTF-8"));
-        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [ParseErrors::getCharacterReferenceOutsideUnicodeRange()]], $decoded);
+        $decoded = $this->bundle($decoder->consumeCharRef(new HtmlStream("#x10000000000000041;", "UTF-8")));
+        $this->assertEquals([self::mb_decode_entity("&#xFFFD;"), [ParseErrors::getCharacterReferenceOutsideUnicodeRange(1, 20)]], $decoded);
     }
 }
