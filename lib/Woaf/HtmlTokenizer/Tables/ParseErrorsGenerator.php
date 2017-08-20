@@ -57,17 +57,35 @@ $errors = [
 
 $functions = "";
 $errorMap = [];
+$inits = "";
 foreach ($errors as $error) {
     $message = str_replace('-', ' ', $error);
-    $funcName = "get" . array_reduce(explode('-', $error), function($carry, $item) { return $carry . ucfirst($item); }, "");
+    $itemName = array_reduce(explode('-', $error), function($carry, $item) { return $carry . ucfirst($item); }, "");
+    $funcName = "get" . $itemName;
+    $staticName = lcfirst($itemName);
     $errorMap[$error] = $funcName;
 
     $functions .= <<<EOF
-        public static function $funcName(\$line = 0, \$col = 0) {
-            return new ParseError("$error", "$message", \$line, \$col);
+        public static function $funcName(\$line, \$col = null) {
+            if (is_array(\$line)) {
+                list(\$line, \$col) = \$line;
+            } elseif (\$col === null) {
+                throw new \Exception("No col value provided");
+            }
+            return new HtmlParseError("$error", "$message", \$line, \$col);
         }
+        
+        public \$$staticName;
 
 EOF;
+
+    $inits .= <<<EOF
+    
+            \$this->$staticName = function(\$line, \$col = null) {
+                return self::$funcName(\$line, \$col);
+            };
+EOF;
+
 
 }
 
@@ -76,9 +94,27 @@ $generated = <<<'EOF'
 
 namespace Woaf\HtmlTokenizer\Tables;
 
-use Woaf\HtmlTokenizer\ParseError;
+use Woaf\HtmlTokenizer\HtmlParseError;
 
 class ParseErrors {
+
+    private static $instance = null;
+    
+    /**
+     * @return ParseErrors
+     */
+    public static function getInstance() {
+        if (!self::$instance) {
+            self::$instance = new ParseErrors();
+        }
+        return self::$instance;
+    }
+    
+    private function __construct() {
+EOF;
+$generated .= $inits;
+$generated .= <<<'EOF'
+    }
 
     private static $errors = 
 EOF;
@@ -87,12 +123,13 @@ $generated .= $functions;
 $generated .= <<<'EOF'
 
     /**
-     * @return ParseError
+     * @return HtmlParseError
      */
-    public static function forCode($code, $col, $line) {
+    public static function forCode($code, $line, $col) {
         $method = self::$errors[$code];
         return self::$method($line, $col);
     }
+
 
 }
 EOF;

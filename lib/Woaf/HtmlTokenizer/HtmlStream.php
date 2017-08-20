@@ -11,15 +11,21 @@ class HtmlStream
     private $internalEncoding;
     private $inputEncoding;
     private $buffer;
-    private $cur = 0;
-    private $curBytes = 0;
-    private $bufLen = 0;
 
-    private $markCur;
-    private $markCurBytes;
+    /**
+     * @var MutableStreamLocation
+     */
+    private $cur;
 
-    private $lastCur;
-    private $lastCurBytes;
+    /**
+     * @var StreamLocation
+     */
+    private $mark;
+
+    /**
+     * @var MutableStreamLocation
+     */
+    private $last = null;
 
     private $furthestConsumed = 0;
 
@@ -33,37 +39,33 @@ class HtmlStream
     private $bufLenBytes;
 
     public function mark() {
-        $this->markCur = $this->cur;
-        $this->markCurBytes = $this->curBytes;
+        $this->mark = $this->save();
     }
 
     public function reset() {
-        $this->cur = $this->markCur;
-        $this->curBytes = $this->markCurBytes;
+        $this->load($this->mark);
     }
 
     public function save() {
-        return [$this->cur, $this->curBytes];
+        return $this->cur->asStreamLocation();
     }
 
-    public function load($save) {
-        list($this->cur, $this->curBytes) = $save;
+    public function load(StreamLocation $save) {
+        $this->cur->fromStreamLocation($save);
     }
 
-    private function loadAndUpdateLast($save) {
+    private function loadAndUpdateLast(MutableStreamLocation $save) {
         $this->updateLast();
-        $this->furthestConsumed = max($save[0], $this->furthestConsumed);
-        list($this->cur, $this->curBytes) = $save;
+        $this->furthestConsumed = max($save->cur, $this->furthestConsumed);
+        $this->cur->update($save);
     }
 
     private function updateLast() {
-        $this->lastCur = $this->cur;
-        $this->lastCurBytes = $this->curBytes;
+        $this->last->update($this->cur);
     }
 
     public function unconsume() {
-        $this->cur = $this->lastCur;
-        $this->curBytes = $this->lastCurBytes;
+        $this->cur->update($this->last);
     }
 
 
@@ -82,10 +84,15 @@ class HtmlStream
         return false;
     }
 
+    public function getLineAndColumn() {
+        return [$this->cur->line, $this->cur->col];
+    }
 
     public function __construct($buf, $forcedEncoding = null, $transportLayerEncoding = null)
     {
         assert(is_string($buf));
+        $this->cur = new MutableStreamLocation();
+        $this->last = new MutableStreamLocation();
         $this->internalEncoding = "UTF-8";
         if ($forcedEncoding != null) {
             $this->confidence = self::CONFIDENCE_CERTAIN;
@@ -101,12 +108,12 @@ class HtmlStream
         }
         $this->buffer = mb_convert_encoding($buf, $this->internalEncoding, $encoding);
         $this->buffer = $buf;
-        $this->bufLen = mb_strlen($this->buffer, $this->internalEncoding);
         $this->bufLenBytes = strlen($this->buffer);
     }
 
-    private function readChar($pos)
+    private function readChar(MutableStreamLocation $ptr)
     {
+        $pos = $ptr->curBytes;
         // This UTTERLY relies on the buffer being well formed UTF-8, which hopefully it is if mb_convert_encoding did its job.
         // TODO: maybe actually check errors like wat.
         if ($pos >= $this->bufLenBytes) {
@@ -150,37 +157,54 @@ class HtmlStream
         }
         $error = null;
         if ($codepoint >= 0xD800 && $codepoint <= 0xDFFF) {
-            $error = ParseErrors::getSurrogateInInputStream();
+            $error = ParseErrors::getSurrogateInInputStream($ptr->line, $ptr->col + 1);
         } elseif (isset(self::$NON_CHARS[$codepoint]) || ($codepoint >= 0xFDD0 && $codepoint <= 0xFDEF) || $codepoint > 0x10FFFF) {
-            $error = ParseErrors::getNoncharacterInInputStream();
+            $error = ParseErrors::getNoncharacterInInputStream($ptr->line, $ptr->col + 1);
         } elseif (!isset(self::$WHITESPACE[$codepoint]) && (($codepoint > 0x0000 && $codepoint <= 0x001F) || ($codepoint >= 0x007F && $codepoint <= 0x009F))) {
             // not whitespace, not null, is otherwise a control char
-            $error = ParseErrors::getControlCharacterInInputStream();
+            $error = ParseErrors::getControlCharacterInInputStream($ptr->line, $ptr->col + 1);
         }
         return [$chr, $width, $codepoint, $error];
     }
 
+    public function isEof() {
+        return ($this->cur->curBytes > $this->bufLenBytes);
+    }
+
     private function peekInternal($len = 1, array &$errors = null) {
-        $chrs = 0;
         $read = null;
         $lastWasCR = false;
         $chr = null;
         $codepoints = [];
-        for ($i = $this->curBytes; $chrs < $len; $i += $width) {
-            list ($chr, $width, $codepoint, $error) = $this->readChar($i);
-            if ($chr === null) {
-                break;
-            }
-            $chrs++;
-            if ($errors !== null && $error && $chrs + $this->cur > $this->furthestConsumed) {
+
+        $ptr = new MutableStreamLocation($this->cur);
+        if ($this->isEof()) {
+            return [$ptr, null, []];
+        }
+        $finalOffset = $this->cur->cur + $len;
+
+        for (; $ptr->cur < $finalOffset; $ptr->curBytes += $width) {
+            list ($chr, $width, $codepoint, $error) = $this->readChar($ptr);
+            $ptr->cur++;
+            if ($errors !== null && $error && $ptr->cur > $this->furthestConsumed) {
                 $errors[] = $error;
             }
-            if ($chr == "\r") {
+            if ($chr === null) {
+                $ptr->col++;
+                $ptr->curBytes++;
+                break;
+            } elseif ($chr == "\r") {
                 $lastWasCR = true;
                 $read .= "\n";
+                $ptr->newline();
                 $codepoints[] = 0x000A;
             } else {
-                if (!($chr == "\n" && $lastWasCR)) {
+                if (!$lastWasCR || $chr != "\n") {
+                    if ($chr == "\n") {
+                        $ptr->newline();
+                    } else {
+                        $ptr->col++;
+                    }
                     $read .= $chr;
                     $codepoints[] = $codepoint;
                 }
@@ -190,16 +214,14 @@ class HtmlStream
         if ($chr !== null) {
             if ($lastWasCR) {
                 // Read ahead an extra char
-                list ($chr, $width) = $this->readChar($i);
+                list ($chr, $width) = $this->readChar($ptr);
                 if ($chr == "\n") {
                     // Skip that for next time.
-                    $i += $width;
-                    $chrs++;
+                    $ptr->curBytes += $width;
+                    $ptr->cur++;
                 }
             }
         }
-
-        $ptr = [$this->cur + $chrs, $i];
 
         return [$ptr, $read, $codepoints];
     }
@@ -252,6 +274,7 @@ class HtmlStream
         while (true) {
             list($ptr, $char) = $this->peekInternal(1, $errors);
             if ($char === null) {
+                $this->loadAndUpdateLast($ptr);
                 $eof = true;
                 break;
             }
@@ -267,12 +290,19 @@ class HtmlStream
     private function pConsume($matching) {
         $data = "";
         $this->updateLast();
-        if (preg_match('/^' . $matching . '/', substr($this->buffer, $this->curBytes), $matches)) {
+        if (preg_match('/^' . $matching . '/', substr($this->buffer, $this->cur->curBytes), $matches)) {
             $data = $matches[0];
-            $this->cur += mb_strlen($data, $this->internalEncoding);
-            $this->furthestConsumed = max($this->cur, $this->furthestConsumed);
-            $this->curBytes += strlen($data);
+            $this->cur->cur += mb_strlen($data, $this->internalEncoding);
+            $this->furthestConsumed = max($this->cur->cur, $this->furthestConsumed);
+            $this->cur->curBytes += strlen($data);
             $data = mb_ereg_replace("\r\n?", "\n", $data);
+            $splitted = mb_split("\n", $data);
+            $lines = count($splitted);
+            $this->cur->line += $lines - 1;
+            if ($lines > 1) {
+                $this->cur->col = 0;
+            }
+            $this->cur->col += mb_strlen($splitted[$lines - 1]);
         }
         return $data;
     }

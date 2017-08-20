@@ -13,7 +13,7 @@ class HtmlStartTagTokenBuilder extends HtmlTagTokenBuilder
         parent::__construct($logger);
     }
 
-    public function build(array &$errors) {
+    public function build(array &$errors, $line, $col = null) {
         return new HtmlStartTagToken($this->name, $this->isSelfClosing, $this->attributes);
     }
 

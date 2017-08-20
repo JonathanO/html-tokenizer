@@ -20,12 +20,12 @@ class HtmlEndTagTokenBuilder extends HtmlTagTokenBuilder
         parent::__construct($logger);
     }
 
-    public function build(array &$errors) {
+    public function build(array &$errors, $line, $col = null) {
         if ($this->isSelfClosing) {
-            $errors[] = ParseErrors::getEndTagWithTrailingSolidus();
+            $errors[] = ParseErrors::getEndTagWithTrailingSolidus($line, $col);
         }
         if ($this->attributes != []) {
-            $errors[] = ParseErrors::getEndTagWithAttributes();
+            $errors[] = ParseErrors::getEndTagWithAttributes($line, $col);
         }
         return new HtmlEndTagToken($this->name, false, []);
     }

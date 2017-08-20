@@ -119,9 +119,9 @@ class HtmlTokenizerTest extends TestCase
             new HtmlCharToken(self::decodeString('<!--test\uFFFD--><!--test-\uFFFD--><!--test--\uFFFD-->')),
         ], $tokens->getTokens());
         $this->assertEquals([
-            ParseErrors::getUnexpectedNullCharacter(),
-            ParseErrors::getUnexpectedNullCharacter(),
-            ParseErrors::getUnexpectedNullCharacter(),
+            ParseErrors::getUnexpectedNullCharacter(1, 9),
+            ParseErrors::getUnexpectedNullCharacter(1, 22),
+            ParseErrors::getUnexpectedNullCharacter(1, 36),
         ], $tokens->getErrors());
     }
 
@@ -133,7 +133,7 @@ class HtmlTokenizerTest extends TestCase
             new HtmlCommentToken("-<")
         ], $tokens->getTokens());
         $this->assertEquals([
-            ParseErrors::getEofInComment(),
+            ParseErrors::getEofInComment(1, 7),
         ], $tokens->getErrors());
     }
 
@@ -145,7 +145,7 @@ class HtmlTokenizerTest extends TestCase
             new HtmlCommentToken(" A")
         ], $tokens->getTokens());
         $this->assertEquals([
-            ParseErrors::getEofInComment(),
+            ParseErrors::getEofInComment(1, 7),
         ], $tokens->getErrors());
     }
 
@@ -166,7 +166,7 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new HtmlDocTypeToken('?',null, null, true)
         ], $tokens->getTokens());
-        $this->assertEquals([ParseErrors::getEofInDoctype()], $tokens->getErrors());
+        $this->assertEquals([ParseErrors::getEofInDoctype(1, 12)], $tokens->getErrors());
     }
 
     public function testDoctypeOnlySystemId()
@@ -187,7 +187,7 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new HtmlCharToken("<>")
         ], $tokens->getTokens());
-        $this->assertEquals([ParseErrors::getInvalidFirstCharacterOfTagName()], $tokens->getErrors());
+        $this->assertEquals([ParseErrors::getInvalidFirstCharacterOfTagName(1, 2)], $tokens->getErrors());
     }
 
     public function testNullCloseElement()
@@ -197,7 +197,7 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $parser->parseText($text);
         $this->assertEquals([
         ], $tokens->getTokens());
-        $this->assertEquals([ParseErrors::getMissingEndTagName()], $tokens->getErrors());
+        $this->assertEquals([ParseErrors::getMissingEndTagName(1, 3)], $tokens->getErrors());
     }
 
     public function testUnClosedEnd()
@@ -208,7 +208,7 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new HtmlCharToken("</")
         ], $tokens->getTokens());
-        $this->assertEquals([ParseErrors::getEofBeforeTagName()], $tokens->getErrors());
+        $this->assertEquals([ParseErrors::getEofBeforeTagName(1, 3)], $tokens->getErrors());
     }
 
     public function testUnquotedEmptyValue()
@@ -219,7 +219,7 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new HtmlStartTagToken("a", false, ['a' => ''])
         ], $tokens->getTokens());
-        $this->assertEquals([ParseErrors::getMissingAttributeValue()], $tokens->getErrors());
+        $this->assertEquals([ParseErrors::getMissingAttributeValue(1, 7)], $tokens->getErrors());
     }
 
     public function testDoctypePublicCaseSensitivity()
@@ -240,7 +240,17 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $parser->parseText($text);
         $this->assertEquals([
             new HtmlCharToken("foo&bar")], $tokens->getTokens());
-        $this->assertEquals([ParseErrors::getEofInCdata()], $tokens->getErrors());
+        $this->assertEquals([ParseErrors::getEofInCdata(1, 8)], $tokens->getErrors());
+    }
+
+    public function testDOCTYPENLEOF()
+    {
+        $text = "<!DOCTYPE \n";
+        $parser = $this->getTokenizer();
+        $tokens = $parser->parseText($text);
+        $this->assertEquals([
+            new HtmlDocTypeToken(null, null, null, true)], $tokens->getTokens());
+        $this->assertEquals([ParseErrors::getEofInDoctype(2, 1)], $tokens->getErrors());
     }
 
 }

@@ -100,5 +100,5 @@ abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
         return $this;
     }
 
-    abstract public function build(array &$errors);
+    abstract public function build(array &$errors, $line, $col = null);
 }

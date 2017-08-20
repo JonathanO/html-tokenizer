@@ -24,4 +24,38 @@ class HtmlParseError implements HtmlTokenizerError
     {
         return "ParseError {$this->message} at {$this->line}:{$this->col}";
     }
+
+    /**
+     * @return mixed
+     */
+    public function getCode()
+    {
+        return $this->code;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getMessage()
+    {
+        return $this->message;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getLine()
+    {
+        return $this->line;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getCol()
+    {
+        return $this->col;
+    }
+
+
 }

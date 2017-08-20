@@ -7,6 +7,7 @@ use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
 use Monolog\Processor\IntrospectionProcessor;
 use PHPUnit\Framework\TestCase;
+use Woaf\HtmlTokenizer\HtmlParseError;
 use Woaf\HtmlTokenizer\HtmlTokenizer;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
@@ -108,12 +109,20 @@ class Html5LibTest extends TestCase
         $result = $tokenizer->parseText($doubleEscaped ? self::unescape($test->input) : $test->input);
 
         $this->assertEquals(array_map(function($a) use ($doubleEscaped) { return $this->convertToken($a, $doubleEscaped); }, $test->output), $result->getTokens(), "Tokens failed to match expected");
-        $this->assertEquals(array_map(array($this, 'convertError'), isset($test->errors) ? $test->errors : []), $result->getErrors(), "Errors failed to match expected", 0.0, 10, true);
+        $this->assertEquals(
+            array_map(array($this, 'convertError'),
+                isset($test->errors) ? $test->errors : []
+            ),
+            array_map(array($this, 'convertParseError'), $result->getErrors()),
+            "Errors failed to match expected");
+    }
+
+    private function convertParseError(HtmlParseError $error) {
+        return $error->getCode();
     }
 
     private function convertError($error) {
-//        return ParseErrors::forCode($error->code, $error->line, $error->col);
-        return ParseErrors::forCode($error->code, 0, 0);
+        return $error->code;
     }
 
     private function convertState($stateName) {

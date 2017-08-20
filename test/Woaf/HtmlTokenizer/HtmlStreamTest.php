@@ -94,13 +94,16 @@ class HtmlStreamTest extends TestCase
     public function testIsNextCr() {
         $buf = new HtmlStream("\rw\r\ns", "UTF-8");
         $errors = [];
+        $this->assertEquals([1, 0], $buf->getLineAndColumn());
         $this->assertFalse($buf->isNext("\r"));
         $this->assertTrue($buf->isNext("\n"));
         $this->assertEquals("\nw", $buf->read($errors, 2));
+        $this->assertEquals([2, 1], $buf->getLineAndColumn());
         $this->assertFalse($buf->isNext("\r"));
         $this->assertTrue($buf->isNext("\n"));
         $this->assertEquals("\n", $buf->read($errors));
         $this->assertFalse($buf->isNext("\n"));
+        $this->assertEquals([3, 0], $buf->getLineAndColumn());
         $this->assertTrue($buf->isNext("s"));
         $this->assertEmpty($errors);
     }
@@ -110,7 +113,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->read($errors));
-        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream(1, 1)], $errors);
     }
 
     public function testControlCharInStreamConsumeUntil() {
@@ -118,7 +121,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->consumeUntil("a", $errors));
-        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream(1, 1)], $errors);
     }
 
     public function testSpecificallyEvilCharInStream() {
@@ -126,7 +129,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $this->assertEquals($badChar, $buf->read($errors));
-        $this->assertEquals([ParseErrors::getControlCharacterInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getControlCharacterInInputStream(1, 1)], $errors);
     }
 
     private static function mb_decode_entity($entity) {
@@ -138,7 +141,7 @@ class HtmlStreamTest extends TestCase
         $buf = new HtmlStream($badChar, "UTF-8");
         $errors = [];
         $read = $buf->read($errors, 2);
-        $this->assertEquals([ParseErrors::getNoncharacterInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getNoncharacterInInputStream(1, 1)], $errors);
         $this->assertEquals($badChar, $read);
     }
 
@@ -157,7 +160,7 @@ class HtmlStreamTest extends TestCase
         $errors = [];
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
-        $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getSurrogateInInputStream(1, 1)], $errors);
     }
 
     public function testValidB1UnicodeChar() {
@@ -175,14 +178,14 @@ class HtmlStreamTest extends TestCase
         $errors = [];
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
-        $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getSurrogateInInputStream(1, 1)], $errors);
         $buf->unconsume();
         $read = $buf->read($errors);
         $this->assertEquals($badChar, $read);
-        $this->assertEquals([ParseErrors::getSurrogateInInputStream()], $errors);
+        $this->assertEquals([ParseErrors::getSurrogateInInputStream(1, 1)], $errors);
     }
 
-    public function eofUnconsume() {
+    public function testEofUnconsume() {
         $buf = new HtmlStream("a", "UTF-8");
         $errors = [];
         $buf->read($errors);
@@ -190,5 +193,30 @@ class HtmlStreamTest extends TestCase
         $buf->unconsume();
         $this->assertNull($buf->read($errors));
     }
+
+    public function testEofColumn() {
+        $buf = new HtmlStream("a", "UTF-8");
+        $errors = [];
+        $this->assertEquals([1, 0], $buf->getLineAndColumn());
+        $this->assertEquals("a", $buf->read($errors));
+        $this->assertEquals([1, 1], $buf->getLineAndColumn());
+        $this->assertNull($buf->read($errors));
+        $this->assertEquals([1, 2], $buf->getLineAndColumn());
+        $this->assertNull($buf->read($errors));
+        $this->assertEquals([1, 2], $buf->getLineAndColumn());
+    }
+
+    public function testEofColumnConsume() {
+        $buf = new HtmlStream("a", "UTF-8");
+        $errors = [];
+        $this->assertEquals([1, 0], $buf->getLineAndColumn());
+        $this->assertEquals("a", $buf->readAlpha());
+        $this->assertEquals([1, 1], $buf->getLineAndColumn());
+        $this->assertEquals("", $buf->readAlpha());
+        $this->assertEquals([1, 1], $buf->getLineAndColumn());
+        $this->assertNull($buf->read($errors));
+        $this->assertEquals([1, 2], $buf->getLineAndColumn());
+    }
+
 
 }

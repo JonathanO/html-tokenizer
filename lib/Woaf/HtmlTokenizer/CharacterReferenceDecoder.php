@@ -75,7 +75,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         if ($next == "x" || $next == "X") {
             $hex = $buffer->readHex();
             if ($hex === "") {
-                $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference();
+                $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference($buffer->getLineAndColumn());
                 if ($this->logger) $this->logger->debug("Failed to consume any hex digits in hex numeric char ref");
                 return "&#$next";
             }
@@ -85,7 +85,7 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             $buffer->unconsume();
             $number = $buffer->readNum();
             if ($number === "") {
-                $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference();
+                $errors[] = ParseErrors::getAbsenceOfDigitsInNumericCharacterReference($buffer->getLineAndColumn());
                 if ($this->logger) $this->logger->debug("Failed to consume any decimal digits in decimal numeric char ref");
                 return "&#";
             }
@@ -96,14 +96,14 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             if ($this->logger) $this->logger->debug("Consumed decimal char ref $number");
         }
         if ($buffer->read($errors) != ";") {
+            $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference($buffer->getLineAndColumn());
             $buffer->unconsume();
-            $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
         }
         if (($number >= 0xD800 && $number <= 0xDFFF) || $number > 0x10FFFF) {
             if ($number > 0x10FFFF) {
-                $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange();
+                $errors[] = ParseErrors::getCharacterReferenceOutsideUnicodeRange($buffer->getLineAndColumn());
             } else {
-                $errors[] = ParseErrors::getSurrogateCharacterReference();
+                $errors[] = ParseErrors::getSurrogateCharacterReference($buffer->getLineAndColumn());
             }
             $remapping = $this->lookup[0];
             if ($this->logger) $this->logger->debug("Found reference $number in bad range, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
@@ -113,27 +113,27 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
             $remapping = $this->lookup[$number];
             if ($this->logger) $this->logger->debug("Found disallowed reference $number, remapping to {$remapping[1]} ({$remapping[2]}): {$remapping[0]}");
             if ($number == 0) {
-                $errors[] = ParseErrors::getNullCharacterReference();
+                $errors[] = ParseErrors::getNullCharacterReference($buffer->getLineAndColumn());
             } else {
-                $errors[] = ParseErrors::getControlCharacterReference();
+                $errors[] = ParseErrors::getControlCharacterReference($buffer->getLineAndColumn());
             }
             return $remapping[0];
         } else {
             if (isset($this->parseErrorsLookup[$number])) {
                 if ($this->logger) $this->logger->debug("Found bad codepoint $number, using anyway");
                 if ($number == 0x000B) {
-                    $errors[] = ParseErrors::getControlCharacterReference();
+                    $errors[] = ParseErrors::getControlCharacterReference($buffer->getLineAndColumn());
                 } else {
-                    $errors[] = ParseErrors::getNoncharacterCharacterReference();
+                    $errors[] = ParseErrors::getNoncharacterCharacterReference($buffer->getLineAndColumn());
                 }
             } else {
                 foreach (self::$parseErrorRanges as $range) {
                     if ($number >= $range[0] && $number <= $range[1]) {
                         if ($this->logger) $this->logger->debug("Found codepoint $number in bad range ({$range[0]} - {$range[1]}), using anyway");
                         if ($number >= 0xFDD0) {
-                            $errors[] = ParseErrors::getNoncharacterCharacterReference();
+                            $errors[] = ParseErrors::getNoncharacterCharacterReference($buffer->getLineAndColumn());
                         } else {
-                            $errors[] = ParseErrors::getControlCharacterReference();
+                            $errors[] = ParseErrors::getControlCharacterReference($buffer->getLineAndColumn());
                         }
                         break;
                     } elseif ($number <= $range[1]) {
@@ -168,8 +168,8 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
         $buffer->reset(); // Unconsume non-matched chars
         if ($candidate != null) {
             if (!$lastWasSemicolon) {
+                $next = $buffer->read($errors);
                 if ($inAttribute) {
-                    $next = $buffer->peek();
                     if ($next == "=" || preg_match('/[A-Za-z0-9]/', $next)) {
                         //if ($next == "=") {
                             //$errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference());
@@ -177,18 +177,19 @@ class CharacterReferenceDecoder implements LoggerAwareInterface
                         $buffer->load($start); // Unconsume everything. Sigh.
                         return "&";
                     } else {
-                        $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                        $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference($buffer->getLineAndColumn());
                     }
                 } else {
-                    $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference();
+                    $errors[] = ParseErrors::getMissingSemicolonAfterCharacterReference($buffer->getLineAndColumn());
                 }
+                $buffer->reset();
             }
             return $candidate;
         } else {
             if ($consumed > 0) {
                 $buffer->readAlnum();
-                if ($buffer->peek() == ";") {
-                    $errors[] = ParseErrors::getUnknownNamedCharacterReference();
+                if ($buffer->read($errors) == ";") {
+                    $errors[] = ParseErrors::getUnknownNamedCharacterReference($buffer->getLineAndColumn());
                 }
                 $buffer->reset();
             }
