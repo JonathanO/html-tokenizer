@@ -28,10 +28,7 @@ class CharacterReferenceDecoderTest extends TestCase
     }
 
     private function bundle(\Generator $gen) {
-        $errors = [];
-        foreach ($gen as $err) {
-            $errors[] = $err;
-        }
+        $errors = iterator_to_array($gen);
         return [$gen->getReturn(), $errors];
     }
 
