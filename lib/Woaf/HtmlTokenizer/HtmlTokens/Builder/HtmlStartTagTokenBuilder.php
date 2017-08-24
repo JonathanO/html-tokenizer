@@ -14,7 +14,8 @@ class HtmlStartTagTokenBuilder extends HtmlTagTokenBuilder
     }
 
     public function build(array &$errors, $line, $col = null) {
-        return new HtmlStartTagToken($this->name, $this->isSelfClosing, $this->attributes);
+        $this->closeLastAttribute();
+        return new HtmlStartTagToken($this->name->getValue(), $this->isSelfClosing, $this->attributes);
     }
 
 }

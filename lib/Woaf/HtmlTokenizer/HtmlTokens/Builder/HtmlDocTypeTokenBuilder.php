@@ -8,23 +8,24 @@ use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
 use Psr\Log\LoggerInterface;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
+use Woaf\HtmlTokenizer\ProtectedBuffer;
 
 class HtmlDocTypeTokenBuilder implements LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
     /**
-     * @var string
+     * @var ProtectedBuffer
      */
     private $name = null;
 
     /**
-     * @var string
+     * @var ProtectedBuffer
      */
     private $publicIdentifier = null;
 
     /**
-     * @var string
+     * @var ProtectedBuffer
      */
     private $systemIdentifier = null;
 
@@ -35,20 +36,21 @@ class HtmlDocTypeTokenBuilder implements LoggerAwareInterface
 
     public function __construct(LoggerInterface $logger = null)
     {
+        $this->name = new ProtectedBuffer();
+        $this->publicIdentifier = new ProtectedBuffer();
+        $this->systemIdentifier = new ProtectedBuffer();
         $this->logger = $logger;
     }
 
     public function setNamePresent()
     {
-        assert($this->name  === null, "Public identifier not initialized!");
-        $this->name = "";
+        $this->name->init();
         return $this;
     }
 
     public function appendToName($str)
     {
-        assert($this->name  !== null, "Name not initialized!");
-        $this->name .= $str;
+        $this->name->append($str);
         return $this;
     }
 
@@ -64,32 +66,30 @@ class HtmlDocTypeTokenBuilder implements LoggerAwareInterface
 
     public function build()
     {
-        return new HtmlDocTypeToken($this->name, $this->publicIdentifier, $this->systemIdentifier, $this->forceQuirks);
+        return new HtmlDocTypeToken($this->name->getValueOrNull(), $this->publicIdentifier->getValueOrNull(), $this->systemIdentifier->getValueOrNull(), $this->forceQuirks);
     }
 
     public function setPublicIdentifierPresent()
     {
-        assert($this->publicIdentifier  === null, "Public identifier not initialized!");
-        $this->publicIdentifier = "";
+        $this->publicIdentifier->init();
+        return $this;
     }
 
     public function setSystemIdentifierPresent()
     {
-        assert($this->systemIdentifier  === null, "Public identifier not initialized!");
-        $this->systemIdentifier = "";
+        $this->systemIdentifier->init();
+        return $this;
     }
 
     public function appendToPublicIdentifier($data)
     {
-        assert($this->publicIdentifier  !== null, "Public identifier not initialized!");
-        $this->publicIdentifier .= $data;
+        $this->publicIdentifier->append($data);
         return $this;
     }
 
     public function appendToSystemIdentifier($data)
     {
-        assert($this->systemIdentifier  !== null, "System identifier not initialized!");
-        $this->systemIdentifier .= $data;
+        $this->systemIdentifier->append($data);
         return $this;
     }
 

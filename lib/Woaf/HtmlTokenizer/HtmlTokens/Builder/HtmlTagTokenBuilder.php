@@ -6,58 +6,64 @@ namespace Woaf\HtmlTokenizer\HtmlTokens\Builder;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
 use Psr\Log\LoggerInterface;
+use Woaf\HtmlTokenizer\ProtectedBuffer;
+use Woaf\HtmlTokenizer\TempBuffer;
 
 abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
 {
     use LoggerAwareTrait;
 
-    protected $name = "";
+    /**
+     * @var ProtectedBuffer
+     */
+    protected $name = null;
     protected $isSelfClosing = false;
     protected $attributes = [];
 
-    private $lastAttribute;
-
+    private $lastAttribute = null;
+    /**
+     * @var TempBuffer
+     */
     private $currentAttributeName;
+
+    /**
+     * @var TempBuffer
+     */
     private $currentAttributeValue;
 
     public function __construct(LoggerInterface $logger = null)
     {
+        $this->name = new ProtectedBuffer();
+        $this->currentAttributeName = new TempBuffer();
+        $this->currentAttributeValue = new TempBuffer();
         $this->logger = $logger;
     }
 
+    public function startName() {
+        $this->name->init();
+        return $this;
+    }
+
     public function appendToName($name) {
-        assert($this->name  !== null, "Public identifier not initialized!");
-        $this->name .= $name;
+        $this->name->append($name);
         return $this;
     }
 
-    private function addAttribute($name, $value) {
-        if ($this->hasAttribute($name)) {
-            throw new \Exception("Duplicate attribute name");
-        }
-        $this->lastAttribute = null;
-        $this->attributes[$name] = $value;
-        return $this;
-    }
-
-    public function startAttributeName($initialValue = "") {
-        $this->lastAttribute = null;
-        $this->currentAttributeName = $initialValue;
+    public function startAttribute() {
+        assert($this->lastAttribute === null, "Last attribute {$this->lastAttribute} wasn't finished!");
+        $this->currentAttributeName->init();
+        $this->currentAttributeValue->init();
         return $this;
     }
 
     public function appendToAttributeName($value) {
-        assert($this->currentAttributeName  !== null, "Public identifier not initialized!");
-        $this->currentAttributeName .= $value;
+        $this->currentAttributeName->append($value);
         return $this;
     }
 
     public function finishAttributeName($attributeName = "") {
-        if ($this->currentAttributeName != null) {
-            $attributeName = $this->currentAttributeName . $attributeName;
-        }
-        $this->currentAttributeName = null;
-        $this->addAttributeName($attributeName);
+        $this->currentAttributeName->append($attributeName);
+        $this->addAttributeName($this->currentAttributeName->useValue());
         return $this;
     }
 
@@ -66,51 +72,62 @@ abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
         return $this;
     }
 
-    public function addAttributeName($name) {
+    private function addAttributeName($name) {
+        assert($this->lastAttribute === null, "Last attribute {$this->lastAttribute} wasn't finished!");
+        $this->lastAttribute = $name;
         if ($this->hasAttribute($name)) {
-            throw new \Exception("Duplicate attribute name");
+            $this->logger->debug("Found duplicate attribute $name");
+            throw new AttributeException("Duplicate attribute name");
         }
         if ($this->logger) {
-            $this->logger->debug("Added attribute name " . $name);
+            $this->logger->debug("Adding attribute name " . $name);
         }
-        $this->lastAttribute = $name;
-        $this->attributes[$name] = "";
         return $this;
     }
 
-    public function hasAttribute($name) {
+    private function hasAttribute($name) {
         return array_key_exists($name, $this->attributes);
     }
 
-    public function startAttributeValue($start = "") {
-        $this->currentAttributeValue = $start;
+    public function appendToAttributeValue($value) {
+        $this->currentAttributeValue->append($value);
         return $this;
     }
 
-    public function appendToAttributeValue($value) {
-        assert($this->currentAttributeValue  !== null, "Public identifier not initialized!");
-        $this->currentAttributeValue .= $value;
+    public function withEmptyAttributeValue() {
+        assert($this->currentAttributeValue->getValue() === "", "Attribute value was populated.");
+        $this->addAttributeValue($this->currentAttributeValue->useValue());
         return $this;
     }
 
     public function finishAttributeValue($attributeValue = "") {
-        if ($this->currentAttributeValue != null) {
-            $attributeValue = $this->currentAttributeValue . $attributeValue;
-        }
-        $this->currentAttributeValue = null;
-        $this->addAttributeValue($attributeValue);
+        $this->currentAttributeValue->append($attributeValue);
+        $this->addAttributeValue($this->currentAttributeValue->useValue());
         return $this;
     }
+
     private function addAttributeValue($value) {
-        if (!isset($this->lastAttribute)) {
-            throw new \Exception("No open attribute!");
+        assert($this->lastAttribute !== null, "No open attribute");
+        $name = $this->lastAttribute;
+        $this->lastAttribute = null;
+        if ($this->hasAttribute($name)) {
+            // Silently discard it as it was a duplicate.
+            if ($this->logger) {
+                $this->logger->debug("Discarded value $value as it's a duplicate of attribute $name");
+            }
+            return $this;
         }
         if ($this->logger) {
-            $this->logger->debug("Added attribute value " . $value);
+            $this->logger->debug("Added attribute value " . $value . " to " . $name);
         }
-        $this->attributes[$this->lastAttribute] = $value;
-        $this->lastAttribute = null;
+        $this->attributes[$name] = $value;
         return $this;
+    }
+
+    protected function closeLastAttribute() {
+        if ($this->lastAttribute != null) {
+            $this->withEmptyAttributeValue();
+        }
     }
 
     abstract public function build(array &$errors, $line, $col = null);

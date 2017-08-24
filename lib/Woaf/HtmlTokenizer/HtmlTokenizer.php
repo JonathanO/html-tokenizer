@@ -3,6 +3,7 @@
 
 namespace Woaf\HtmlTokenizer;
 
+use Woaf\HtmlTokenizer\HtmlTokens\Builder\AttributeException;
 use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlDocTypeTokenBuilder;
 use Woaf\HtmlTokenizer\HtmlTokens\Builder\HtmlTagTokenBuilder;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
@@ -282,6 +283,7 @@ class HtmlTokenizer
                         default:
                             if (preg_match("/[a-zA-Z]/u", $next)) {
                                 $this->currentTokenBuilder = HtmlStartTagToken::builder($this->logger);
+                                $this->currentTokenBuilder->startName();
                                 $this->stream->unconsume();
                                 $this->setState(State::$STATE_TAG_NAME);
                             } else {
@@ -306,6 +308,7 @@ class HtmlTokenizer
                     $next = (yield from $this->stream->read());
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
+                        $this->currentTokenBuilder->startName();
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_TAG_NAME);
                     } elseif ($next == ">") {
@@ -378,6 +381,7 @@ class HtmlTokenizer
                     $next = (yield from $this->stream->read());
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
+                        $this->currentTokenBuilder->startName();
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_RCDATA_END_TAG_NAME);
                     } elseif ($breakOnEof && $next === null) {
@@ -440,6 +444,7 @@ class HtmlTokenizer
                     $next = (yield from $this->stream->read());
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
+                        $this->currentTokenBuilder->startName();
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_RAWTEXT_END_TAG_NAME);
                     } elseif ($breakOnEof && $next === null) {
@@ -505,6 +510,7 @@ class HtmlTokenizer
                     $next = (yield from $this->stream->read());
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
+                        $this->currentTokenBuilder->startName();
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA_END_TAG_NAME);
                     } elseif ($breakOnEof && $next === null) {
@@ -868,11 +874,11 @@ class HtmlTokenizer
                                 break;
                             case "=":
                                 yield from $this->parseError(ParseErrors::getUnexpectedEqualsSignBeforeAttributeName($this->stream->getLineAndColumn()));
-                                $this->currentTokenBuilder->startAttributeName("=");
+                                $this->currentTokenBuilder->startAttribute()->appendToAttributeName("=");
                                 $this->setState(State::$STATE_ATTRIBUTE_NAME);
                                 break;
                             default:
-                                $this->currentTokenBuilder->startAttributeName("");
+                                $this->currentTokenBuilder->startAttribute();
                                 $this->stream->unconsume();
                                 $this->setState(State::$STATE_ATTRIBUTE_NAME);
                                 break;
@@ -930,6 +936,7 @@ class HtmlTokenizer
                     } else {
                         switch ($next) {
                             case "/":
+                                $this->currentTokenBuilder;
                                 $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case "=":
@@ -941,7 +948,7 @@ class HtmlTokenizer
                                 break;
                             default:
                                 $this->stream->unconsume();
-                                $this->currentTokenBuilder->startAttributeName('');
+                                $this->currentTokenBuilder->withEmptyAttributeValue()->startAttribute();
                                 $this->setState(State::$STATE_ATTRIBUTE_NAME);
                         }
                     }
@@ -972,7 +979,7 @@ class HtmlTokenizer
                     yield from $this->consume(
                         $actions = [
                             "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
-                                $this->finishAttributeValueOrDiscard($data);
+                                $this->currentTokenBuilder->finishAttributeValue($data);
                             }),
                             "&" => $this->getEntityReplacer(null, true),
                             "\0" => $this->getNullReplacer(),
@@ -983,7 +990,7 @@ class HtmlTokenizer
                                 $this->currentTokenBuilder->appendToAttributeValue($data);
                                 return;
                             }
-                            $this->finishAttributeValueOrDiscard($data);
+                            $this->currentTokenBuilder->finishAttributeValue($data);
                             yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
                         }
                     );
@@ -992,7 +999,7 @@ class HtmlTokenizer
                     yield from $this->consume(
                         $actions = [
                             "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
-                                $this->finishAttributeValueOrDiscard($data);
+                                $this->currentTokenBuilder->finishAttributeValue($data);
                             }),
                             "&" => $this->getEntityReplacer(null, true),
                             "\0" => $this->getNullReplacer(),
@@ -1003,14 +1010,14 @@ class HtmlTokenizer
                                 $this->currentTokenBuilder->appendToAttributeValue($data);
                                 return;
                             }
-                            $this->finishAttributeValueOrDiscard($data);
+                            $this->currentTokenBuilder->finishAttributeValue($data);
                             yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
                         }
                         );
                     break;
                 case State::$STATE_ATTRIBUTE_VALUE_UNQUOTED:
                     $switchBeforeAttrName = $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_NAME, function($read, &$data) {
-                        $this->finishAttributeValueOrDiscard($data);
+                        $this->currentTokenBuilder->finishAttributeValue($data);
                     }, false);
                     yield from $this->consume(
                         $actions = [
@@ -1021,7 +1028,7 @@ class HtmlTokenizer
                             "&" => $this->getEntityReplacer( ">", true),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA,
                                 function($read, &$data) use (&$tokens, &$errors) {
-                                    $this->finishAttributeValueOrDiscard($data);
+                                    $this->currentTokenBuilder->finishAttributeValue($data);
                                     yield from $this->emit($this->currentTokenBuilder->build($this->errorQueue, $this->stream->getLineAndColumn()));
                                 }
                             ),
@@ -1038,7 +1045,7 @@ class HtmlTokenizer
                                 $this->currentTokenBuilder->appendToAttributeValue($data);
                                 return;
                             }
-                            $this->finishAttributeValueOrDiscard($data);
+                            $this->currentTokenBuilder->finishAttributeValue($data);
                             yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
                         }
                     );
@@ -1844,17 +1851,8 @@ class HtmlTokenizer
     private function finishAttributeNameOrParseError($name) {
         try {
             $this->currentTokenBuilder->finishAttributeName($name);
-        } catch (\Exception $e) {
-            // TODO more specific excpetion
+        } catch (AttributeException $e) {
             yield from $this->parseError(ParseErrors::getDuplicateAttribute($this->stream->getLineAndColumn()));
-        }
-    }
-
-    private function finishAttributeValueOrDiscard($value) {
-        try {
-            $this->currentTokenBuilder->finishAttributeValue($value);
-        } catch (\Exception $ignored) {
-            // TODO more specific excpetion
         }
     }
 

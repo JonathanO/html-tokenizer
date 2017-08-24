@@ -21,13 +21,14 @@ class HtmlEndTagTokenBuilder extends HtmlTagTokenBuilder
     }
 
     public function build(array &$errors, $line, $col = null) {
+        $this->closeLastAttribute();
         if ($this->isSelfClosing) {
             $errors[] = ParseErrors::getEndTagWithTrailingSolidus($line, $col);
         }
         if ($this->attributes != []) {
             $errors[] = ParseErrors::getEndTagWithAttributes($line, $col);
         }
-        return new HtmlEndTagToken($this->name, false, []);
+        return new HtmlEndTagToken($this->name->getValue(), false, []);
     }
 
 }

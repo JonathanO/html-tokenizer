@@ -9,28 +9,17 @@
 namespace Woaf\HtmlTokenizer;
 
 
-class TempBuffer
+class TempBuffer extends ProtectedBuffer
 {
 
-    private $buffer;
-
-    private function guard() {
-        assert($this->buffer !== null, "Buffer not initialized!");
-    }
-
-    public function append($str) {
-        $this->guard();
-        $this->buffer .= $str;
-    }
-
-    public function init() {
-        $this->buffer = "";
+    public function release() {
+        $this->assertInitialized();
+        $this->clear();
     }
 
     public function useValue() {
-        $this->guard();
-        $ret = $this->buffer;
-        $this->buffer = null;
+        $ret = $this->getValue();
+        $this->release();
         return $ret;
     }
 
