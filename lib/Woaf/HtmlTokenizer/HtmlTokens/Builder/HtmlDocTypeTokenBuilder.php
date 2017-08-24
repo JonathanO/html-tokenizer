@@ -38,33 +38,17 @@ class HtmlDocTypeTokenBuilder implements LoggerAwareInterface
         $this->logger = $logger;
     }
 
-
-    /**
-     * @param string $name
-     * @return HtmlDocTypeTokenBuilder
-     */
-    public function setName($name)
+    public function setNamePresent()
     {
-        $this->name = $name;
-        return $this;
-    }
-    /**
-     * @param string $publicIdentifier
-     * @return HtmlDocTypeTokenBuilder
-     */
-    public function setPublicIdentifier($publicIdentifier)
-    {
-        $this->publicIdentifier = $publicIdentifier;
+        assert($this->name  === null, "Public identifier not initialized!");
+        $this->name = "";
         return $this;
     }
 
-    /**
-     * @param string $systemIdentifier
-     * @return HtmlDocTypeTokenBuilder
-     */
-    public function setSystemIdentifier($systemIdentifier)
+    public function appendToName($str)
     {
-        $this->systemIdentifier = $systemIdentifier;
+        assert($this->name  !== null, "Name not initialized!");
+        $this->name .= $str;
         return $this;
     }
 
@@ -81,6 +65,32 @@ class HtmlDocTypeTokenBuilder implements LoggerAwareInterface
     public function build()
     {
         return new HtmlDocTypeToken($this->name, $this->publicIdentifier, $this->systemIdentifier, $this->forceQuirks);
+    }
+
+    public function setPublicIdentifierPresent()
+    {
+        assert($this->publicIdentifier  === null, "Public identifier not initialized!");
+        $this->publicIdentifier = "";
+    }
+
+    public function setSystemIdentifierPresent()
+    {
+        assert($this->systemIdentifier  === null, "Public identifier not initialized!");
+        $this->systemIdentifier = "";
+    }
+
+    public function appendToPublicIdentifier($data)
+    {
+        assert($this->publicIdentifier  !== null, "Public identifier not initialized!");
+        $this->publicIdentifier .= $data;
+        return $this;
+    }
+
+    public function appendToSystemIdentifier($data)
+    {
+        assert($this->systemIdentifier  !== null, "System identifier not initialized!");
+        $this->systemIdentifier .= $data;
+        return $this;
     }
 
 }

@@ -11,6 +11,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\LoggerAwareTrait;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlEofToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlToken;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
@@ -26,11 +27,6 @@ class HtmlTokenizer
     private static $FFFDReplacementCharacter = 	"\xEF\xBF\xBD";
 
     private $entityReplacementTable;
-
-    /**
-     * @var int
-     */
-    private $curState;
 
     /**
      * @var TokenizerState
@@ -53,6 +49,11 @@ class HtmlTokenizer
     private $stream;
 
     private $errorQueue = [];
+
+    /**
+     * @var TempBuffer
+     */
+    private $tempBuffer;
 
     public function pushState($state, $lastStartTagName) {
         $this->setState($state);
@@ -96,6 +97,7 @@ class HtmlTokenizer
         }
         $this->entityReplacementTable = new CharacterReferenceDecoder($logger);
         $this->state = new TokenizerState();
+        $this->tempBuffer = new TempBuffer();
         $this->stream = $stream;
     }
 
@@ -239,7 +241,7 @@ class HtmlTokenizer
      * @return \Generator
      * @throws \Exception
      */
-    public function parse()
+    public function parse($breakOnEof = false)
     {
         $done = false;
         while (!$done) {
@@ -284,6 +286,9 @@ class HtmlTokenizer
                                 $this->setState(State::$STATE_TAG_NAME);
                             } else {
                                 if ($next === null) {
+                                    if ($breakOnEof) {
+                                        return;
+                                    }
                                     yield from $this->parseError(ParseErrors::getEofBeforeTagName($this->stream->getLineAndColumn()));
                                     yield from $this->emit(new HtmlCharToken("<"));
                                     $done = true;
@@ -307,6 +312,9 @@ class HtmlTokenizer
                         yield from $this->parseError(ParseErrors::getMissingEndTagName($this->stream->getLineAndColumn()));
                         $this->setState(State::$STATE_DATA);
                     } elseif ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofBeforeTagName($this->stream->getLineAndColumn()));
                         yield from $this->emit(new HtmlCharToken("</"));
                         $done = true;
@@ -319,7 +327,7 @@ class HtmlTokenizer
                     break;
                 case State::$STATE_TAG_NAME:
                     $setTagName = function($read, &$data) {
-                        $this->currentTokenBuilder->setName($data);
+                        $this->currentTokenBuilder->appendToName($data);
                     };
                     $beforeANameSwitcher = $this->getBasicStateSwitcher(State::$STATE_BEFORE_ATTRIBUTE_NAME, $setTagName);
                     $toLowerCase = function($read, &$data) {
@@ -334,7 +342,7 @@ class HtmlTokenizer
                         ">" => function($read, &$data, &$consume, &$continue) use (&$tokens) {
                             $continue = false;
                             $this->setState(State::$STATE_DATA);
-                            $this->currentTokenBuilder->setName($data);
+                            $this->currentTokenBuilder->appendToName($data);
                             yield from $this->emit($this->currentTokenBuilder->build($this->errorQueue, $this->stream->getLineAndColumn()));
                         },
                         "\0" => $this->getNullReplacer(),
@@ -344,17 +352,22 @@ class HtmlTokenizer
                     }
                     yield from $this->consume(
                         $actions,
-                        function ($read, $data) use (&$errors, &$done) {
-                            $this->currentTokenBuilder->setName($data);
-                            yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
+                        function ($read, $data) use (&$errors, &$done, $breakOnEof) {
                             $done = true;
+                            $this->currentTokenBuilder->appendToName($data);
+                            if (!$breakOnEof) {
+                                yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
+                            }
                         }
                     );
                     break;
                 case State::$STATE_RCDATA_LT_SIGN:
                     $next = (yield from $this->stream->read());
                     if ($next === "/") {
+                        $this->tempBuffer->init();
                         $this->setState(State::$STATE_RCDATA_END_TAG_OPEN);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("<"));
                         $this->stream->unconsume();
@@ -367,6 +380,8 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_RCDATA_END_TAG_NAME);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("</"));
                         $this->stream->unconsume();
@@ -374,7 +389,11 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_RCDATA_END_TAG_NAME:
-                    $tempBuffer = $this->stream->readAlpha();
+                    $this->tempBuffer->append($this->stream->readAlpha());
+                    if ($breakOnEof && $this->stream->isEof()) {
+                        return;
+                    }
+                    $tempBuffer = $this->tempBuffer->useValue();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         yield from $this->emit(new HtmlCharToken("</" . $tempBuffer));
@@ -385,15 +404,15 @@ class HtmlTokenizer
                             case "\t":
                             case "\n":
                             case "\f":
-                                $this->currentTokenBuilder->setName($name);
+                                $this->currentTokenBuilder->appendToName($name);
                                 $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
-                                $this->currentTokenBuilder->setName($name);
+                                $this->currentTokenBuilder->appendToName($name);
                                 $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
-                                $this->currentTokenBuilder->setName($name);
+                                $this->currentTokenBuilder->appendToName($name);
                                 yield from $this->emit($this->currentTokenBuilder->build($this->errorQueue, $this->stream->getLineAndColumn()));
                                 $this->setState(State::$STATE_DATA);
                                 break;
@@ -407,7 +426,10 @@ class HtmlTokenizer
                 case State::$STATE_RAWTEXT_LT_SIGN:
                     $next = (yield from $this->stream->read());
                     if ($next === "/") {
+                        $this->tempBuffer->init();
                         $this->setState(State::$STATE_RAWTEXT_END_TAG_OPEN);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("<"));
                         $this->stream->unconsume();
@@ -420,6 +442,8 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_RAWTEXT_END_TAG_NAME);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("</"));
                         $this->stream->unconsume();
@@ -427,7 +451,11 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_RAWTEXT_END_TAG_NAME:
-                    $tempBuffer = $this->stream->readAlpha();
+                    $this->tempBuffer->append($this->stream->readAlpha());
+                    if ($breakOnEof && $this->stream->isEof()) {
+                        return;
+                    }
+                    $tempBuffer = $this->tempBuffer->useValue();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         yield from $this->emit(new HtmlCharToken("</" . $tempBuffer));
@@ -438,15 +466,15 @@ class HtmlTokenizer
                             case "\t":
                             case "\n":
                             case "\f":
-                                $this->currentTokenBuilder->setName($name);
+                                $this->currentTokenBuilder->appendToName($name);
                                 $this->setState(State::$STATE_BEFORE_ATTRIBUTE_NAME);
                                 break;
                             case "/":
-                                $this->currentTokenBuilder->setName($name);
+                                $this->currentTokenBuilder->appendToName($name);
                                 $this->setState(State::$STATE_SELF_CLOSING_START_TAG);
                                 break;
                             case ">":
-                                $this->currentTokenBuilder->setName($name);
+                                $this->currentTokenBuilder->appendToName($name);
                                 yield from $this->emit($this->currentTokenBuilder->build($this->errorQueue, $this->stream->getLineAndColumn()));
                                 $this->setState(State::$STATE_DATA);
                                 break;
@@ -460,10 +488,13 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_LT_SIGN:
                     $next = (yield from $this->stream->read());
                     if ($next === "/") {
+                        $this->tempBuffer->init();
                         $this->setState(State::$STATE_SCRIPT_DATA_END_TAG_OPEN);
                     } elseif ($next === "!") {
                         $this->setState(State::$STATE_SCRIPT_DATA_ESCAPE_START);
                         yield from $this->emit(new HtmlCharToken("<!"));
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("<"));
                         $this->stream->unconsume();
@@ -476,6 +507,8 @@ class HtmlTokenizer
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA_END_TAG_NAME);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("</"));
                         $this->stream->unconsume();
@@ -483,7 +516,11 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_END_TAG_NAME:
-                    $tempBuffer = $this->stream->readAlpha();
+                    $this->tempBuffer->append($this->stream->readAlpha());
+                    if ($this->stream->isEof() && $breakOnEof) {
+                        return;
+                    }
+                    $tempBuffer = $this->tempBuffer->useValue();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         yield from $this->emit(new HtmlCharToken("</" . $tempBuffer));
@@ -514,18 +551,24 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_ESCAPE_START:
-                    if ((yield from $this->stream->read()) == "-") {
+                    $read = (yield from $this->stream->read());
+                    if ($read == "-") {
                         yield from $this->emit(new HtmlCharToken("-"));
                         $this->setState(State::$STATE_SCRIPT_DATA_ESCAPE_START_DASH);
+                    } elseif ($breakOnEof && $read === null) {
+                        return;
                     } else {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA);
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_ESCAPE_START_DASH:
-                    if ((yield from $this->stream->read()) == "-") {
+                    $read = (yield from $this->stream->read());
+                    if ($read == "-") {
                         yield from $this->emit(new HtmlCharToken("-"));
                         $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_DASH_DASH);
+                    } elseif ($breakOnEof && $read === null) {
+                        return;
                     } else {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA);
@@ -540,6 +583,9 @@ class HtmlTokenizer
                                 $eof
                     );
                     if ($eof) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText($this->stream->getLineAndColumn()));
                         $done = true;
                     }
@@ -559,6 +605,9 @@ class HtmlTokenizer
                             yield from $this->emit(new HtmlCharToken(self::$FFFDReplacementCharacter));
                             break;
                         case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                             yield from $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText($this->stream->getLineAndColumn()));
                             $done = true;
                             break;
@@ -585,6 +634,9 @@ class HtmlTokenizer
                             yield from $this->emit(new HtmlCharToken(self::$FFFDReplacementCharacter));
                             break;
                         case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                             yield from $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText($this->stream->getLineAndColumn()));
                             $done = true;
                             break;
@@ -596,11 +648,15 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_ESCAPED_LT_SIGN:
                     $next = (yield from $this->stream->read());
                     if ($next === "/") {
+                        $this->tempBuffer->init();
                         $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_OPEN);
                     } else if (preg_match("/[a-zA-Z]/u", $next)) {
+                        $this->tempBuffer->init();
                         yield from $this->emit(new HtmlCharToken("<"));
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("<"));
                         $this->stream->unconsume();
@@ -612,7 +668,10 @@ class HtmlTokenizer
                     if (preg_match("/[a-zA-Z]/u", $next)) {
                         $this->currentTokenBuilder = HtmlEndTagToken::builder($this->logger);
                         $this->stream->unconsume();
+                        $this->tempBuffer->init();
                         $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("</"));
                         $this->stream->unconsume();
@@ -620,7 +679,11 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_ESCAPED_END_TAG_NAME:
-                    $tempBuffer = $this->stream->readAlpha();
+                    $this->tempBuffer->append($this->stream->readAlpha());
+                    if ($this->stream->isEof() && $breakOnEof) {
+                        return;
+                    }
+                    $tempBuffer = $this->tempBuffer->useValue();
                     $name = mb_convert_case($tempBuffer, MB_CASE_LOWER);
                     if (!$this->lastStartTagName || $name != $this->lastStartTagName) {
                         yield from $this->emit(new HtmlCharToken("</" . $tempBuffer));
@@ -648,7 +711,10 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_START:
-                    $tempBuffer = $this->stream->readAlpha();
+                    $this->tempBuffer->append($this->stream->readAlpha());
+                    if ($breakOnEof && $this->stream->isEof()) {
+                        return;
+                    }
                     switch ($read = (yield from $this->stream->read())) {
                         case " ":
                         case "\t":
@@ -656,6 +722,7 @@ class HtmlTokenizer
                         case "\f":
                         case "/":
                         case ">":
+                            $tempBuffer = $this->tempBuffer->useValue();
                             $name = strtolower($tempBuffer);
                             if ($name == "script") {
                                 $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
@@ -663,12 +730,13 @@ class HtmlTokenizer
                                 $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
                             }
                             $tempBuffer .= $read;
+                            yield from $this->emit(new HtmlCharToken($tempBuffer));
                             break;
                         default:
                             $this->stream->unconsume();
                             $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
+                            yield from $this->emit(new HtmlCharToken($this->tempBuffer->useValue()));
                     }
-                    yield from $this->emit(new HtmlCharToken($tempBuffer));
                     break;
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED:
                     yield from $this->consumeDataNoEntityReplacement(
@@ -679,6 +747,9 @@ class HtmlTokenizer
                         $eof
                     );
                     if ($eof) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText($this->stream->getLineAndColumn()));
                         $done = true;
                     }
@@ -686,6 +757,9 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH:
                     $char = (yield from $this->stream->read());
                     if ($char == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
@@ -710,6 +784,9 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH:
                     $char = (yield from $this->stream->read());
                     if ($char == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInScriptHtmlCommentLikeText($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
@@ -736,15 +813,21 @@ class HtmlTokenizer
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED_LT_SIGN:
                     $next = (yield from $this->stream->read());
                     if ($next === "/") {
+                        $this->tempBuffer->init();
                         $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END);
                         yield from $this->emit(new HtmlCharToken("/"));
+                    } elseif ($next === null && $breakOnEof) {
+                        return;
                     } else {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                     }
                     break;
                 case State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPE_END:
-                    $tempBuffer = $this->stream->readAlpha();
+                    $this->tempBuffer->append($this->stream->readAlpha());
+                    if ($breakOnEof && $this->stream->isEof()) {
+                        return;
+                    }
                     switch ($read = (yield from $this->stream->read())) {
                         case " ":
                         case "\t":
@@ -752,6 +835,7 @@ class HtmlTokenizer
                         case "\f":
                         case "/":
                         case ">":
+                            $tempBuffer = $this->tempBuffer->useValue();
                             $name = strtolower($tempBuffer);
                             if ($name == "script") {
                                 $this->setState(State::$STATE_SCRIPT_DATA_ESCAPED);
@@ -759,15 +843,19 @@ class HtmlTokenizer
                                 $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
                             }
                             $tempBuffer .= $read;
+                            yield from $this->emit(new HtmlCharToken($tempBuffer));
                             break;
                         default:
                             $this->stream->unconsume();
                             $this->setState(State::$STATE_SCRIPT_DATA_DOUBLE_ESCAPED);
+                            yield from $this->emit(new HtmlCharToken($this->tempBuffer->useValue()));
                     }
-                    yield from $this->emit(new HtmlCharToken($tempBuffer));
                     break;
                 case State::$STATE_BEFORE_ATTRIBUTE_NAME:
                     $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next == null) {
+                        return;
+                    }
                     if ($next == null || $next == "/" || $next == ">") {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_AFTER_ATTRIBUTE_NAME);
@@ -796,6 +884,16 @@ class HtmlTokenizer
                         yield from $this->finishAttributeNameOrParseError($data);
                     };
                     $afterANameSwitcher = $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_NAME, $addAttributeName, false);
+                    $onEof = function($read, &$data, &$consume, &$continue) use ($breakOnEof, &$done, $afterANameSwitcher) {
+                        $continue = false;
+                        if ($breakOnEof) {
+                            $this->currentTokenBuilder->appendToAttributeName($data);
+                            $done = true;
+                        } else {
+                            yield from $afterANameSwitcher($read, $data, $consume, $continue);
+                        }
+                    };
+
                     $toLowerCase = function($read, &$data) {
                         $data .= strtolower($read);
                     };
@@ -817,13 +915,16 @@ class HtmlTokenizer
                     }
                     yield from $this->consume(
                         $actions,
-                        $afterANameSwitcher
+                        $onEof
                     );
                     break;
                 case State::$STATE_AFTER_ATTRIBUTE_NAME:
                     $this->stream->discardWhitespace();
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
@@ -847,6 +948,9 @@ class HtmlTokenizer
                     break;
                 case State::$STATE_BEFORE_ATTRIBUTE_VALUE:
                     $this->stream->discardWhitespace();
+                    if ($breakOnEof && $this->stream->isEof()) {
+                        return;
+                    }
                     switch ($read = (yield from $this->stream->read())) {
                         case "\"":
                             $this->setState(State::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED);
@@ -873,10 +977,14 @@ class HtmlTokenizer
                             "&" => $this->getEntityReplacer(null, true),
                             "\0" => $this->getNullReplacer(),
                         ],
-                        function ($read, $data) use (&$errors, &$done) {
+                        function ($read, $data) use (&$errors, &$done, $breakOnEof) {
+                            $done = true;
+                            if ($breakOnEof) {
+                                $this->currentTokenBuilder->appendToAttributeValue($data);
+                                return;
+                            }
                             $this->finishAttributeValueOrDiscard($data);
                             yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
-                            $done = true;
                         }
                     );
                     break;
@@ -889,10 +997,14 @@ class HtmlTokenizer
                             "&" => $this->getEntityReplacer(null, true),
                             "\0" => $this->getNullReplacer(),
                         ],
-                        function ($read, $data) use (&$errors, &$done) {
+                        function ($read, $data) use (&$errors, &$done, $breakOnEof) {
+                            $done = true;
+                            if ($breakOnEof) {
+                                $this->currentTokenBuilder->appendToAttributeValue($data);
+                                return;
+                            }
                             $this->finishAttributeValueOrDiscard($data);
                             yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
-                            $done = true;
                         }
                         );
                     break;
@@ -920,17 +1032,23 @@ class HtmlTokenizer
                             "=" => $this->getParseErrorAndContinue(ParseErrors::getInstance()->unexpectedCharacterInUnquotedAttributeValue),
                             "`" => $this->getParseErrorAndContinue(ParseErrors::getInstance()->unexpectedCharacterInUnquotedAttributeValue),
                         ],
-                        function ($read, $data) use (&$errors, &$done) {
+                        function ($read, $data) use (&$errors, &$done, $breakOnEof) {
+                            $done = true;
+                            if ($breakOnEof) {
+                                $this->currentTokenBuilder->appendToAttributeValue($data);
+                                return;
+                            }
                             $this->finishAttributeValueOrDiscard($data);
                             yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
-                            $done = true;
-                        },
-                        $errors
+                        }
                     );
                     break;
                 case State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED:
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
@@ -958,6 +1076,9 @@ class HtmlTokenizer
                 case State::$STATE_SELF_CLOSING_START_TAG:
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInTag($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
@@ -980,9 +1101,13 @@ class HtmlTokenizer
                             ">" => $switchAndEmit,
                             "\0" => function($read, &$data) { $data .= self::$FFFDReplacementCharacter; }
                         ],
-                        function ($read, $data) use (&$done) {
-                            yield from $this->emit(new HtmlCommentToken($this->comment . $data));
+                        function ($read, $data) use (&$done, $breakOnEof) {
                             $done = true;
+                            $this->comment .= $data;
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->emit(new HtmlCommentToken($this->comment));
                         }
                     );
                     break;
@@ -1002,6 +1127,8 @@ class HtmlTokenizer
                             yield from $this->parseError(ParseErrors::getCdataInHtmlContent($this->stream->getLineAndColumn()));
                             $this->comment = "[CDATA[";
                             $this->setState(State::$STATE_BOGUS_COMMENT);
+                        } elseif ($breakOnEof && mb_strlen($peeked) < 7) {
+                            return;
                         } else {
                             (yield from $this->stream->read());
                             yield from $this->parseError(ParseErrors::getIncorrectlyOpenedComment($this->stream->getLineAndColumn()));
@@ -1021,6 +1148,10 @@ class HtmlTokenizer
                             yield from $this->emit(new HtmlCommentToken($this->comment));
                             $this->setState(State::$STATE_DATA);
                             break;
+                        case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                         default:
                             $this->stream->unconsume();
                             $this->setState(State::$STATE_COMMENT);
@@ -1029,6 +1160,9 @@ class HtmlTokenizer
                 case State::$STATE_COMMENT_START_DASH:
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInComment($this->stream->getLineAndColumn()));
                         yield from $this->emit(new HtmlCommentToken($this->comment));
                         $done = true;
@@ -1056,11 +1190,14 @@ class HtmlTokenizer
                             "-" => $this->getBasicStateSwitcher(State::$STATE_COMMENT_END_DASH, function($read, &$data) { $this->comment .= $data; }),
                             "\0" => $this->getNullReplacer()
                         ],
-                        function ($read, &$data) use (&$tokens, &$errors, &$done) {
+                        function ($read, &$data) use (&$tokens, &$done, $breakOnEof) {
                             $this->comment .= $data;
+                            $done = true;
+                            if ($breakOnEof) {
+                                return;
+                            }
                             yield from $this->parseError(ParseErrors::getEofInComment($this->stream->getLineAndColumn()));
                             yield from $this->emit(new HtmlCommentToken($this->comment));
-                            $done = true;
                         }
                     );
                     break;
@@ -1073,6 +1210,10 @@ class HtmlTokenizer
                         case "<":
                             $this->comment .= "<";
                             break;
+                        case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                         default:
                             $this->stream->unconsume();
                             $this->setState(State::$STATE_COMMENT);
@@ -1080,16 +1221,22 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_COMMENT_LT_SIGN_BANG:
-                    if ((yield from $this->stream->read()) == "-") {
+                    $next = (yield from $this->stream->read());
+                    if ($next == "-") {
                         $this->setState(State::$STATE_COMMENT_LT_SIGN_BANG_DASH);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_COMMENT);
                     }
                     break;
                 case State::$STATE_COMMENT_LT_SIGN_BANG_DASH:
-                    if ((yield from $this->stream->read()) == "-") {
+                    $next = (yield from $this->stream->read());
+                    if ($next == "-") {
                         $this->setState(State::$STATE_COMMENT_LT_SIGN_BANG_DASH_DASH);
+                    } elseif ($breakOnEof && $next === null) {
+                        return;
                     } else {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_COMMENT_END_DASH);
@@ -1097,7 +1244,9 @@ class HtmlTokenizer
                     break;
                 case State::$STATE_COMMENT_LT_SIGN_BANG_DASH_DASH:
                     $read = (yield from $this->stream->read());
-                    if ($read == null || $read == "-") {
+                    if ($breakOnEof && $read == null) {
+                        return;
+                    } elseif ($read == null || $read == "-") {
                         $this->stream->unconsume();
                         $this->setState(State::$STATE_COMMENT_END);
                     } else {
@@ -1109,59 +1258,62 @@ class HtmlTokenizer
                 case State::$STATE_COMMENT_END_DASH:
                     $read = (yield from $this->stream->read());
                     if ($read === null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInComment($this->stream->getLineAndColumn()));
                         yield from $this->emit(new HtmlCommentToken($this->comment));
                         $done = true;
+                    } elseif ($read == "-") {
+                        $this->setState(State::$STATE_COMMENT_END);
                     } else {
-                        if ($read == "-") {
-                            $this->setState(State::$STATE_COMMENT_END);
-                        } else {
-                            $this->comment .= "-";
-                            $this->stream->unconsume();
-                            $this->setState(State::$STATE_COMMENT);
-                        }
+                        $this->comment .= "-";
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_COMMENT);
                     }
                     break;
                 case State::$STATE_COMMENT_END:
                     $read = (yield from $this->stream->read());
                     if ($read === null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInComment($this->stream->getLineAndColumn()));
                         yield from $this->emit(new HtmlCommentToken($this->comment));
                         $done = true;
+                    } elseif ($read == ">") {
+                        yield from $this->emit(new HtmlCommentToken($this->comment));
+                        $this->setState(State::$STATE_DATA);
+                    } elseif ($read == "!") {
+                        $this->setState(State::$STATE_COMMENT_END_BANG);
+                    } elseif ($read == "-") {
+                        $this->comment .= "-";
                     } else {
-                        if ($read == ">") {
-                            yield from $this->emit(new HtmlCommentToken($this->comment));
-                            $this->setState(State::$STATE_DATA);
-                        } elseif ($read == "!") {
-                            $this->setState(State::$STATE_COMMENT_END_BANG);
-                        } elseif ($read == "-") {
-                            $this->comment .= "-";
-                        } else {
-                            $this->comment .= "--";
-                            $this->stream->unconsume();
-                            $this->setState(State::$STATE_COMMENT);
-                        }
+                        $this->comment .= "--";
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_COMMENT);
                     }
                     break;
                 case State::$STATE_COMMENT_END_BANG:
                     $read = (yield from $this->stream->read());
                     if ($read === null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInComment($this->stream->getLineAndColumn()));
                         yield from $this->emit(new HtmlCommentToken($this->comment));
                         $done = true;
+                    } elseif ($read == "-") {
+                        $this->comment .= "--!";
+                        $this->setState(State::$STATE_COMMENT_END_DASH);
+                    } elseif ($read == ">") {
+                        yield from $this->parseError(ParseErrors::getIncorrectlyClosedComment($this->stream->getLineAndColumn()));
+                        yield from $this->emit(new HtmlCommentToken($this->comment));
+                        $this->setState(State::$STATE_DATA);
                     } else {
-                        if ($read == "-") {
-                            $this->comment .= "--!";
-                            $this->setState(State::$STATE_COMMENT_END_DASH);
-                        } elseif ($read == ">") {
-                            yield from $this->parseError(ParseErrors::getIncorrectlyClosedComment($this->stream->getLineAndColumn()));
-                            yield from $this->emit(new HtmlCommentToken($this->comment));
-                            $this->setState(State::$STATE_DATA);
-                        } else {
-                            $this->comment .= "--!";
-                            $this->stream->unconsume();
-                            $this->setState(State::$STATE_COMMENT);
-                        }
+                        $this->comment .= "--!";
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_COMMENT);
                     }
                     break;
                 case State::$STATE_DOCTYPE:
@@ -1177,6 +1329,9 @@ class HtmlTokenizer
                             $this->setState(State::$STATE_BEFORE_DOCTYPE_NAME);
                             break;
                         case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                             yield from $this->emit(HtmlDocTypeToken::builder($this->logger)->isForceQuirks(true)->build());
                             yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                             $done = true;
@@ -1198,19 +1353,23 @@ class HtmlTokenizer
                             $this->setState(State::$STATE_DATA);
                             break;
                         case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                             yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                             yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                             $done = true;
                             break;
                         default:
                             // Deviation from the spec, but I think it's equivalent.
+                            $this->currentDoctypeBuilder->setNamePresent();
                             $this->stream->unconsume();
                             $this->setState(State::$STATE_DOCTYPE_NAME);
                     }
                     break;
                 case State::$STATE_DOCTYPE_NAME:
                     $addDoctypeName = function($read, &$data) {
-                        $this->currentDoctypeBuilder->setName($data);
+                        $this->currentDoctypeBuilder->appendToName($data);
                     };
                     $afterDTNameSwitcher = $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_NAME, $addDoctypeName);
                     $toLowerCase = function($read, &$data) {
@@ -1223,7 +1382,7 @@ class HtmlTokenizer
                         " " => $afterDTNameSwitcher,
                         ">" => function($read, &$data, &$consume, &$continue) use (&$tokens) {
                         $continue = false;
-                            $this->currentDoctypeBuilder->setName($data);
+                            $this->currentDoctypeBuilder->appendToName($data);
                             yield from $this->emit($this->currentDoctypeBuilder->build());
                             $this->setState(State::$STATE_DATA);
                         },
@@ -1234,10 +1393,14 @@ class HtmlTokenizer
                     }
                     yield from $this->consume(
                         $actions,
-                        function ($read, $data) use (&$tokens, &$errors, &$done) {
-                            yield from $this->emit($this->currentDoctypeBuilder->setName($data)->isForceQuirks(true)->build());
-                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
+                        function ($read, $data) use (&$tokens, &$errors, &$done, $breakOnEof) {
+                            $this->currentDoctypeBuilder->appendToName($data);
                             $done = true;
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
+                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         }
                     );
                     break;
@@ -1245,6 +1408,9 @@ class HtmlTokenizer
                     $this->stream->discardWhitespace();
                     $first = (yield from $this->stream->read());
                     if ($first == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         $done = true;
@@ -1260,6 +1426,9 @@ class HtmlTokenizer
                             } elseif ($potentialKeyword == "SYSTEM") {
                                 (yield from $this->stream->read(5));
                                 $this->setState(State::$STATE_AFTER_DOCTYPE_SYSTEM_KEYWORD);
+                            } elseif ($breakOnEof && mb_strlen($potentialKeyword) < 5) {
+                                // TODO This is bad mmk.
+                                return;
                             } else {
                                 yield from $this->parseError(ParseErrors::getInvalidCharacterSequenceAfterDoctypeName($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
@@ -1271,6 +1440,9 @@ class HtmlTokenizer
                 case State::$STATE_AFTER_DOCTYPE_PUBLIC_KEYWORD:
                     $read = (yield from $this->stream->read());
                     if ($read == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         $this->setState(State::$STATE_DATA);
@@ -1284,12 +1456,12 @@ class HtmlTokenizer
                                 break;
                             case "\"":
                                 yield from $this->parseError(ParseErrors::getMissingWhitespaceAfterDoctypePublicKeyword($this->stream->getLineAndColumn()));
-                                $this->currentDoctypeBuilder->setPublicIdentifier("");
+                                $this->currentDoctypeBuilder->setPublicIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
                                 yield from $this->parseError(ParseErrors::getMissingWhitespaceAfterDoctypePublicKeyword($this->stream->getLineAndColumn()));
-                                $this->currentDoctypeBuilder->setPublicIdentifier("");
+                                $this->currentDoctypeBuilder->setPublicIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED);
                                 break;
                             case ">":
@@ -1309,17 +1481,20 @@ class HtmlTokenizer
                     $this->stream->discardWhitespace();
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
                         switch ($next) {
                             case "\"":
-                                $this->currentDoctypeBuilder->setPublicIdentifier("");
+                                $this->currentDoctypeBuilder->setPublicIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
-                                $this->currentDoctypeBuilder->setPublicIdentifier("");
+                                $this->currentDoctypeBuilder->setPublicIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED);
                                 break;
                             case ">":
@@ -1338,34 +1513,42 @@ class HtmlTokenizer
                 case State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED:
                     yield from $this->consume(
                         [
-                            "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_PUBLIC_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->setPublicIdentifier($data); }),
+                            "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_PUBLIC_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->appendToPublicIdentifier($data); }),
                             "\0" => $this->getNullReplacer(),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens, &$errors) {
                                 yield from $this->parseError(ParseErrors::getAbruptDoctypePublicIdentifier($this->stream->getLineAndColumn()));
-                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build());
+                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->appendToPublicIdentifier($data)->build());
                             })
                         ],
-                        function($read, &$data) use (&$tokens, &$errors, &$done) {
-                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
-                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build());
+                        function($read, &$data) use (&$tokens, &$errors, &$done, $breakOnEof) {
                             $done = true;
-                        },
-                        $errors
+                            $this->currentDoctypeBuilder->appendToPublicIdentifier($data);
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
+                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
+                        }
                     );
                     break;
                 case State::$STATE_DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
                     yield from $this->consume(
                         [
-                            "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_PUBLIC_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->setPublicIdentifier($data); }),
+                            "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_PUBLIC_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->appendToPublicIdentifier($data); }),
                             "\0" => $this->getNullReplacer(),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens, &$errors) {
                                 yield from $this->parseError(ParseErrors::getAbruptDoctypePublicIdentifier($this->stream->getLineAndColumn()));
-                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build());
-                            })                        ],
-                        function($read, &$data) use (&$tokens, &$errors, &$done) {
-                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
-                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setPublicIdentifier($data)->build());
+                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->appendToPublicIdentifier($data)->build());
+                            })
+                        ],
+                        function($read, &$data) use (&$tokens, &$errors, &$done, $breakOnEof) {
+                            $this->currentDoctypeBuilder->appendToPublicIdentifier($data);
                             $done = true;
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
+                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         }
 
                     );
@@ -1373,6 +1556,9 @@ class HtmlTokenizer
                 case State::$STATE_AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         $done = true;
@@ -1390,12 +1576,12 @@ class HtmlTokenizer
                                 break;
                             case "\"":
                                 yield from $this->parseError(ParseErrors::getMissingWhitespaceBetweenDoctypePublicAndSystemIdentifiers($this->stream->getLineAndColumn()));
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
                                 yield from $this->parseError(ParseErrors::getMissingWhitespaceBetweenDoctypePublicAndSystemIdentifiers($this->stream->getLineAndColumn()));
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED);
                                 break;
                             default:
@@ -1410,6 +1596,9 @@ class HtmlTokenizer
                     $this->stream->discardWhitespace();
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         $done = true;
@@ -1420,11 +1609,11 @@ class HtmlTokenizer
                                 $this->setState(State::$STATE_DATA);
                                 break;
                             case "\"":
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED);
                                 break;
                             default:
@@ -1438,6 +1627,9 @@ class HtmlTokenizer
                 case State::$STATE_AFTER_DOCTYPE_SYSTEM_KEYWORD:
                     $read = (yield from $this->stream->read());
                     if ($read == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         $done = true;
@@ -1451,12 +1643,12 @@ class HtmlTokenizer
                                 break;
                             case "\"":
                                 yield from $this->parseError(ParseErrors::getMissingWhitespaceAfterDoctypeSystemKeyword($this->stream->getLineAndColumn()));
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
                                 yield from $this->parseError(ParseErrors::getMissingWhitespaceAfterDoctypeSystemKeyword($this->stream->getLineAndColumn()));
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED);
                                 break;
                             case ">":
@@ -1476,17 +1668,20 @@ class HtmlTokenizer
                     $this->stream->discardWhitespace();
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         $done = true;
                     } else {
                         switch ($next) {
                             case "\"":
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED);
                                 break;
                             case "'":
-                                $this->currentDoctypeBuilder->setSystemIdentifier("");
+                                $this->currentDoctypeBuilder->setSystemIdentifierPresent();
                                 $this->setState(State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED);
                                 break;
                             case ">":
@@ -1505,34 +1700,42 @@ class HtmlTokenizer
                 case State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED:
                     yield from $this->consume(
                         [
-                            "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_SYSTEM_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->setSystemIdentifier($data); }),
+                            "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_SYSTEM_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->appendToSystemIdentifier($data); }),
                             "\0" => $this->getNullReplacer(),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens, &$errors) {
                                 yield from $this->parseError(ParseErrors::getAbruptDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
-                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build());
+                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->appendToSystemIdentifier($data)->build());
                             })
                         ],
-                        function($read, &$data) use (&$tokens, &$errors, &$done) {
-                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
-                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build());
+                        function($read, &$data) use (&$tokens, &$errors, &$done, $breakOnEof) {
                             $done = true;
+                            $this->currentDoctypeBuilder->appendToSystemIdentifier($data);
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
+                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         }
                     );
                     break;
                 case State::$STATE_DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
                     yield from $this->consume(
                         [
-                            "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_SYSTEM_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->setSystemIdentifier($data); }),
+                            "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_DOCTYPE_SYSTEM_IDENTIFIER, function($read, &$data) { $this->currentDoctypeBuilder->appendToSystemIdentifier($data); }),
                             "\0" => $this->getNullReplacer(),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens, &$errors) {
                                 yield from $this->parseError(ParseErrors::getAbruptDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
-                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build());
+                                yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->appendToSystemIdentifier($data)->build());
                             })
                         ],
-                        function($read, &$data) use (&$tokens, &$errors, &$done) {
-                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
-                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->setSystemIdentifier($data)->build());
+                        function($read, &$data) use (&$tokens, &$errors, &$done, $breakOnEof) {
                             $done = true;
+                            $this->currentDoctypeBuilder->appendToSystemIdentifier($data);
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
+                            yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         }
                     );
                     break;
@@ -1540,6 +1743,9 @@ class HtmlTokenizer
                     $this->stream->discardWhitespace();
                     $next = (yield from $this->stream->read());
                     if ($next == null) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInDoctype($this->stream->getLineAndColumn()));
                         yield from $this->emit($this->currentDoctypeBuilder->isForceQuirks(true)->build());
                         $done = true;
@@ -1555,17 +1761,19 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_BOGUS_DOCTYPE:
-                    yield from $this->consume(
-                        [
-                            ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) use (&$tokens) {
-                                yield from $this->emit($this->currentDoctypeBuilder->build());
-                            }),
-                        ],
-                        function($read, &$data) use (&$done, &$tokens) {
-                            yield from $this->emit($this->currentDoctypeBuilder->build());
-                            $done = true;
+                    $eof = false;
+                    yield from $this->stream->consumeUntil(">");
+                    $read = (yield from $this->stream->read());
+                    if ($read === null) {
+                        if ($breakOnEof) {
+                            return;
                         }
-                        );
+                        yield from $this->emit($this->currentDoctypeBuilder->build());
+                        $done = true;
+                    } else {
+                        $this->setState(State::$STATE_DATA);
+                        yield from $this->emit($this->currentDoctypeBuilder->build());
+                    }
                     break;
                 case State::$STATE_CDATA_SECTION:
                     $consumed = (yield from $this->stream->consumeUntil("]", $eof));
@@ -1573,6 +1781,9 @@ class HtmlTokenizer
                         yield from $this->emit(new HtmlCharToken($consumed));
                     }
                     if ($eof) {
+                        if ($breakOnEof) {
+                            return;
+                        }
                         yield from $this->parseError(ParseErrors::getEofInCdata($this->stream->getLineAndColumn()));
                         $done = true;
                     } else {
@@ -1580,8 +1791,11 @@ class HtmlTokenizer
                     }
                     break;
                 case State::$STATE_CDATA_SECTION_BRACKET:
-                    if ((yield from $this->stream->read()) == "]") {
+                    $read = (yield from $this->stream->read());
+                    if ($read == "]") {
                         $this->setState(State::$STATE_CDATA_SECTION_END);
+                    } elseif ($breakOnEof && $read === null) {
+                        return;
                     } else {
                         yield from $this->emit(new HtmlCharToken("]"));
                         $this->stream->unconsume();
@@ -1596,6 +1810,10 @@ class HtmlTokenizer
                         case ">":
                             $this->setState(State::$STATE_DATA);
                             break;
+                        case null:
+                            if ($breakOnEof) {
+                                return;
+                            }
                         default:
                             yield from $this->emit(new HtmlCharToken("]]"));
                             $this->stream->unconsume();
@@ -1606,7 +1824,9 @@ class HtmlTokenizer
                     throw new \Exception("TODO: Parse error invalid state: " . $this->getState());
             }
         }
-        yield from $this->errorQueue;
+        if (!$breakOnEof) {
+            yield new HtmlEofToken();
+        }
     }
 
     private function finishAttributeNameOrParseError($name) {

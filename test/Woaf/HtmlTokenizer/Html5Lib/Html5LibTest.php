@@ -13,6 +13,7 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlEofToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
@@ -108,7 +109,7 @@ class Html5LibTest extends TestCase
         $tokenizer->pushState($this->convertState($initialState), $lastStartTagName);
         $result = $tokenizer->parseText($doubleEscaped ? self::unescape($test->input) : $test->input);
 
-        $this->assertEquals(array_map(function($a) use ($doubleEscaped) { return $this->convertToken($a, $doubleEscaped); }, $test->output), $result->getTokens(), "Tokens failed to match expected");
+        $this->assertEquals($this->convertTokens($test->output, $doubleEscaped), $result->getTokens(), "Tokens failed to match expected");
         $this->assertEquals(
             array_map(array($this, 'convertError'),
                 isset($test->errors) ? $test->errors : []
@@ -123,6 +124,12 @@ class Html5LibTest extends TestCase
 
     private function convertError($error) {
         return $error->code;
+    }
+
+    private function convertTokens($tokens, $doubleEscaped) {
+        $tokens = array_map(function($a) use ($doubleEscaped) { return $this->convertToken($a, $doubleEscaped); }, $tokens);
+        $tokens[] = new HtmlEofToken();
+        return $tokens;
     }
 
     private function convertState($stateName) {

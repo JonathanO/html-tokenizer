@@ -167,6 +167,9 @@ class HtmlStream
         return [$chr, $width, $codepoint, $error];
     }
 
+    /**
+     * @return bool true if the next read/peek will return null.
+     */
     public function isEof() {
         return ($this->cur->curBytes > $this->bufLenBytes);
     }

@@ -25,12 +25,13 @@ abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
         $this->logger = $logger;
     }
 
-    public function setName($name) {
-        $this->name = $name;
+    public function appendToName($name) {
+        assert($this->name  !== null, "Public identifier not initialized!");
+        $this->name .= $name;
         return $this;
     }
 
-    public function addAttribute($name, $value) {
+    private function addAttribute($name, $value) {
         if ($this->hasAttribute($name)) {
             throw new \Exception("Duplicate attribute name");
         }
@@ -42,6 +43,12 @@ abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
     public function startAttributeName($initialValue = "") {
         $this->lastAttribute = null;
         $this->currentAttributeName = $initialValue;
+        return $this;
+    }
+
+    public function appendToAttributeName($value) {
+        assert($this->currentAttributeName  !== null, "Public identifier not initialized!");
+        $this->currentAttributeName .= $value;
         return $this;
     }
 
@@ -80,6 +87,12 @@ abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
         return $this;
     }
 
+    public function appendToAttributeValue($value) {
+        assert($this->currentAttributeValue  !== null, "Public identifier not initialized!");
+        $this->currentAttributeValue .= $value;
+        return $this;
+    }
+
     public function finishAttributeValue($attributeValue = "") {
         if ($this->currentAttributeValue != null) {
             $attributeValue = $this->currentAttributeValue . $attributeValue;
@@ -88,7 +101,7 @@ abstract class HtmlTagTokenBuilder implements LoggerAwareInterface
         $this->addAttributeValue($attributeValue);
         return $this;
     }
-    public function addAttributeValue($value) {
+    private function addAttributeValue($value) {
         if (!isset($this->lastAttribute)) {
             throw new \Exception("No open attribute!");
         }

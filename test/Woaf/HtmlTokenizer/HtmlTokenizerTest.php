@@ -11,6 +11,7 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlCharToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlCommentToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlDocTypeToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
+use Woaf\HtmlTokenizer\HtmlTokens\HtmlEofToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
@@ -38,7 +39,8 @@ class HtmlTokenizerTest extends TestCase
         $this->assertEquals([
             new HtmlStartTagToken("div", false, ["class" => "foo"]),
             new HtmlCharToken("LOL"),
-            new HtmlEndTagToken("div", false, [])
+            new HtmlEndTagToken("div", false, []),
+            new HtmlEofToken()
         ], $tokens->getTokens());
     }
 
@@ -47,6 +49,7 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $parser->parseText("\n");
         $this->assertEquals([
             new HtmlCharToken("\n"),
+            new HtmlEofToken()
         ], $tokens->getTokens());
     }
 
@@ -75,6 +78,7 @@ class HtmlTokenizerTest extends TestCase
             new HtmlEndTagToken("body", false, []),
             new HtmlCharToken("\n"),
             new HtmlEndTagToken("html", false, []),
+            new HtmlEofToken()
         ], $tokens->getTokens());
     }
 
@@ -87,6 +91,7 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $tokenizer->parseText(self::mb_decode_entity("&#x0000;"));
         $this->assertEquals([
             new HtmlCharToken(json_decode('"\u0000"')),
+            new HtmlEofToken()
         ], $tokens->getTokens());
     }
 
@@ -96,6 +101,7 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $tokenizer->parseText(self::mb_decode_entity("&#x0000;"));
         $this->assertEquals([
             new HtmlCharToken(json_decode('"\uFFFD"')),
+            new HtmlEofToken()
         ], $tokens->getTokens());
     }
 
@@ -104,6 +110,7 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $parser->parseText('<br/>');
         $this->assertEquals([
             new HtmlStartTagToken("br", true, []),
+            new HtmlEofToken()
         ], $tokens->getTokens());
     }
 
@@ -117,6 +124,7 @@ class HtmlTokenizerTest extends TestCase
         $tokens = $parser->parseText(self::decodeString('<!--test\u0000--><!--test-\u0000--><!--test--\u0000-->'));
         $this->assertEquals([
             new HtmlCharToken(self::decodeString('<!--test\uFFFD--><!--test-\uFFFD--><!--test--\uFFFD-->')),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([
             ParseErrors::getUnexpectedNullCharacter(1, 9),
@@ -130,7 +138,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText(self::decodeString('<!---<'));
         $this->assertEquals([
-            new HtmlCommentToken("-<")
+            new HtmlCommentToken("-<"),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([
             ParseErrors::getEofInComment(1, 7),
@@ -142,7 +151,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText(self::decodeString('<!-- A'));
         $this->assertEquals([
-            new HtmlCommentToken(" A")
+            new HtmlCommentToken(" A"),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([
             ParseErrors::getEofInComment(1, 7),
@@ -154,7 +164,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML Transitional 4.01//EN">');
         $this->assertEquals([
-            new HtmlDocTypeToken("html",'-//W3C//DTD HTML Transitional 4.01//EN', null, false)
+            new HtmlDocTypeToken("html",'-//W3C//DTD HTML Transitional 4.01//EN', null, false),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([], $tokens->getErrors());
     }
@@ -164,7 +175,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText('<!DOCTYPE ?');
         $this->assertEquals([
-            new HtmlDocTypeToken('?',null, null, true)
+            new HtmlDocTypeToken('?',null, null, true),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getEofInDoctype(1, 12)], $tokens->getErrors());
     }
@@ -174,7 +186,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText('<!DOCTYPE html SYSTEM "-//W3C//DTD HTML Transitional 4.01//EN">');
         $this->assertEquals([
-            new HtmlDocTypeToken("html", null, '-//W3C//DTD HTML Transitional 4.01//EN', false)
+            new HtmlDocTypeToken("html", null, '-//W3C//DTD HTML Transitional 4.01//EN', false),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([], $tokens->getErrors());
     }
@@ -185,7 +198,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText($text);
         $this->assertEquals([
-            new HtmlCharToken("<>")
+            new HtmlCharToken("<>"),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getInvalidFirstCharacterOfTagName(1, 2)], $tokens->getErrors());
     }
@@ -195,7 +209,7 @@ class HtmlTokenizerTest extends TestCase
         $text = "</>";
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText($text);
-        $this->assertEquals([
+        $this->assertEquals([new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getMissingEndTagName(1, 3)], $tokens->getErrors());
     }
@@ -206,7 +220,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText($text);
         $this->assertEquals([
-            new HtmlCharToken("</")
+            new HtmlCharToken("</"),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getEofBeforeTagName(1, 3)], $tokens->getErrors());
     }
@@ -217,7 +232,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText($text);
         $this->assertEquals([
-            new HtmlStartTagToken("a", false, ['a' => ''])
+            new HtmlStartTagToken("a", false, ['a' => '']),
+            new HtmlEofToken()
         ], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getMissingAttributeValue(1, 7)], $tokens->getErrors());
     }
@@ -228,7 +244,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText($text);
         $this->assertEquals([
-            new HtmlDocTypeToken("html", "aBc", "xYz", false)], $tokens->getTokens());
+            new HtmlDocTypeToken("html", "aBc", "xYz", false),
+            new HtmlEofToken()], $tokens->getTokens());
         $this->assertEquals([], $tokens->getErrors());
     }
 
@@ -239,7 +256,8 @@ class HtmlTokenizerTest extends TestCase
         $parser->pushState(State::$STATE_CDATA_SECTION, null);
         $tokens = $parser->parseText($text);
         $this->assertEquals([
-            new HtmlCharToken("foo&bar")], $tokens->getTokens());
+            new HtmlCharToken("foo&bar"),
+            new HtmlEofToken()], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getEofInCdata(1, 8)], $tokens->getErrors());
     }
 
@@ -249,7 +267,8 @@ class HtmlTokenizerTest extends TestCase
         $parser = $this->getTokenizer();
         $tokens = $parser->parseText($text);
         $this->assertEquals([
-            new HtmlDocTypeToken(null, null, null, true)], $tokens->getTokens());
+            new HtmlDocTypeToken(null, null, null, true),
+            new HtmlEofToken()], $tokens->getTokens());
         $this->assertEquals([ParseErrors::getEofInDoctype(2, 1)], $tokens->getErrors());
     }
 
