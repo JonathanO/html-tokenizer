@@ -1099,7 +1099,10 @@ class HtmlTokenizer
                     yield from $this->consume(
                         [
                             ">" => $switchAndEmit,
-                            "\0" => function($read, &$data) { $data .= self::$FFFDReplacementCharacter; }
+                            "\0" => function($read, &$data) {
+                                yield from $this->parseError(ParseErrors::getUnexpectedNullCharacter($this->stream->getLineAndColumn()));
+                                $data .= self::$FFFDReplacementCharacter;
+                            }
                         ],
                         function ($read, $data) use (&$done, $breakOnEof) {
                             $done = true;
@@ -1432,6 +1435,7 @@ class HtmlTokenizer
                             } else {
                                 yield from $this->parseError(ParseErrors::getInvalidCharacterSequenceAfterDoctypeName($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                             }
                         }
@@ -1472,6 +1476,7 @@ class HtmlTokenizer
                             default:
                                 yield from $this->parseError(ParseErrors::getMissingQuoteBeforeDoctypePublicIdentifier($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                                 break;
                         }
@@ -1505,6 +1510,7 @@ class HtmlTokenizer
                             default:
                                 yield from $this->parseError(ParseErrors::getMissingQuoteBeforeDoctypePublicIdentifier($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                                 break;
                         }
@@ -1587,6 +1593,7 @@ class HtmlTokenizer
                             default:
                                 yield from $this->parseError(ParseErrors::getMissingQuoteBeforeDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                                 break;
                         }
@@ -1619,6 +1626,7 @@ class HtmlTokenizer
                             default:
                                 yield from $this->parseError(ParseErrors::getMissingQuoteBeforeDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                                 break;
                         }
@@ -1659,6 +1667,7 @@ class HtmlTokenizer
                             default:
                                 yield from $this->parseError(ParseErrors::getMissingQuoteBeforeDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                                 break;
                         }
@@ -1692,6 +1701,7 @@ class HtmlTokenizer
                             default:
                                 yield from $this->parseError(ParseErrors::getMissingQuoteBeforeDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
                                 $this->currentDoctypeBuilder->isForceQuirks(true);
+                                $this->stream->unconsume();
                                 $this->setState(State::$STATE_BOGUS_DOCTYPE);
                                 break;
                         }
@@ -1755,6 +1765,7 @@ class HtmlTokenizer
                             $this->setState(State::$STATE_DATA);
                         } else {
                             yield from $this->parseError(ParseErrors::getUnexpectedCharacterAfterDoctypeSystemIdentifier($this->stream->getLineAndColumn()));
+                            $this->stream->unconsume();
                             $this->setState(State::$STATE_BOGUS_DOCTYPE);
                             break;
                         }
@@ -1762,18 +1773,19 @@ class HtmlTokenizer
                     break;
                 case State::$STATE_BOGUS_DOCTYPE:
                     $eof = false;
-                    yield from $this->stream->consumeUntil(">");
-                    $read = (yield from $this->stream->read());
-                    if ($read === null) {
-                        if ($breakOnEof) {
-                            return;
+                    yield from $this->consume(
+                        [
+                            ">" => $this->getBasicStateSwitcher(State::$STATE_DATA, function($read, &$data) { yield from $this->emit($this->currentDoctypeBuilder->build()); }),
+                            "\0" => $this->getParseErrorAndContinue(ParseErrors::getInstance()->unexpectedNullCharacter)
+                        ],
+                        function($read, &$data) use ($breakOnEof, &$done) {
+                            $done = true;
+                            if ($breakOnEof) {
+                                return;
+                            }
+                            yield from $this->emit($this->currentDoctypeBuilder->build());
                         }
-                        yield from $this->emit($this->currentDoctypeBuilder->build());
-                        $done = true;
-                    } else {
-                        $this->setState(State::$STATE_DATA);
-                        yield from $this->emit($this->currentDoctypeBuilder->build());
-                    }
+                    );
                     break;
                 case State::$STATE_CDATA_SECTION:
                     $consumed = (yield from $this->stream->consumeUntil("]", $eof));
