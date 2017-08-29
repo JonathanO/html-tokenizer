@@ -16,9 +16,35 @@ class TokenizerState
 
     private $state;
 
+    private $returnState = null;
+
     public function __construct()
     {
         $this->state = State::$STATE_DATA;
+    }
+
+    public function setReturnState($returnState)
+    {
+        assert($this->returnState == null);
+        $this->returnState = $returnState;
+    }
+
+    public function setReturnPoint()
+    {
+        $this->setReturnState($this->state);
+    }
+
+    public function getReturnState()
+    {
+        assert($this->returnState != null);
+        return $this->returnState;
+    }
+
+    public function doReturn()
+    {
+        assert($this->returnState != null);
+        $this->state = $this->returnState;
+        $this->returnState = null;
     }
 
 

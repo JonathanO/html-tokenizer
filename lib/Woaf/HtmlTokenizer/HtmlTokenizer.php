@@ -15,6 +15,9 @@ use Woaf\HtmlTokenizer\HtmlTokens\HtmlEndTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlEofToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlStartTagToken;
 use Woaf\HtmlTokenizer\HtmlTokens\HtmlToken;
+use Woaf\HtmlTokenizer\Tables\CharRefRemapping;
+use Woaf\HtmlTokenizer\Tables\Codepoints;
+use Woaf\HtmlTokenizer\Tables\NamedEntity;
 use Woaf\HtmlTokenizer\Tables\ParseErrors;
 use Woaf\HtmlTokenizer\Tables\State;
 
@@ -26,8 +29,6 @@ class HtmlTokenizer
     use LoggerAwareTrait;
 
     private static $FFFDReplacementCharacter = 	"\xEF\xBF\xBD";
-
-    private $entityReplacementTable;
 
     /**
      * @var TokenizerState
@@ -55,6 +56,7 @@ class HtmlTokenizer
      * @var TempBuffer
      */
     private $tempBuffer;
+    private $characterReferenceCode;
 
     public function pushState($state, $lastStartTagName) {
         $this->setState($state);
@@ -96,7 +98,6 @@ class HtmlTokenizer
         if ($logger) {
             $this->setLogger($logger);
         }
-        $this->entityReplacementTable = new CharacterReferenceDecoder($logger);
         $this->state = new TokenizerState();
         $this->tempBuffer = new TempBuffer();
         $this->stream = $stream;
@@ -109,6 +110,18 @@ class HtmlTokenizer
             $this->setState($newState);
             if ($andThen != null) {
                 yield from $this->yieldOrFail($andThen($read, $data));
+            }
+        };
+    }
+
+    private function getEntityReplacer(callable $stashData = null)
+    {
+        return function ($read, &$data, &$consume, &$continue) use ($stashData) {
+            $continue = false;
+            $this->state->setReturnPoint();
+            $this->setState(State::$STATE_CHARACTER_REFERENCE);
+            if ($stashData != null) {
+                yield from $this->yieldOrFail($stashData($read, $data));
             }
         };
     }
@@ -129,7 +142,7 @@ class HtmlTokenizer
         };
 
         $actions = [
-              "&" => $this->getEntityReplacer(),
+              "&" => $this->getEntityReplacer($andEmit),
               "<" => $this->getBasicStateSwitcher($ltState, $andEmit),
         ];
         if ($doNullReplacement) {
@@ -147,12 +160,6 @@ class HtmlTokenizer
         );
     }
 
-    private function getEntityReplacer($additionalAllowedChar = null, $inAttribute = false)
-    {
-        return function ($read, &$data) use ($additionalAllowedChar, $inAttribute) {
-            $data .= (yield from $this->entityReplacementTable->consumeCharRef($this->stream, $additionalAllowedChar, $inAttribute));
-        };
-    }
 
     private function getNullReplacer()
     {
@@ -981,7 +988,9 @@ class HtmlTokenizer
                             "\"" => $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
                                 $this->currentTokenBuilder->finishAttributeValue($data);
                             }),
-                            "&" => $this->getEntityReplacer(null, true),
+                            "&" => $this->getEntityReplacer(function($read, $data) {
+                                $this->currentTokenBuilder->appendToAttributeValue($data);
+                            }),
                             "\0" => $this->getNullReplacer(),
                         ],
                         function ($read, $data) use (&$errors, &$done, $breakOnEof) {
@@ -1001,7 +1010,9 @@ class HtmlTokenizer
                             "'" => $this->getBasicStateSwitcher(State::$STATE_AFTER_ATTRIBUTE_VALUE_QUOTED, function($read, &$data) {
                                 $this->currentTokenBuilder->finishAttributeValue($data);
                             }),
-                            "&" => $this->getEntityReplacer(null, true),
+                            "&" => $this->getEntityReplacer(function($read, $data) {
+                                $this->currentTokenBuilder->appendToAttributeValue($data);
+                            }),
                             "\0" => $this->getNullReplacer(),
                         ],
                         function ($read, $data) use (&$errors, &$done, $breakOnEof) {
@@ -1025,7 +1036,9 @@ class HtmlTokenizer
                             "\n" => $switchBeforeAttrName,
                             "\f" => $switchBeforeAttrName,
                             " " => $switchBeforeAttrName,
-                            "&" => $this->getEntityReplacer( ">", true),
+                            "&" => $this->getEntityReplacer(function($read, $data) {
+                                $this->currentTokenBuilder->appendToAttributeValue($data);
+                            }),
                             ">" => $this->getBasicStateSwitcher(State::$STATE_DATA,
                                 function($read, &$data) use (&$tokens, &$errors) {
                                     $this->currentTokenBuilder->finishAttributeValue($data);
@@ -1839,12 +1852,208 @@ class HtmlTokenizer
                             $this->setState(State::$STATE_CDATA_SECTION);
                     }
                     break;
+                case State::$STATE_CHARACTER_REFERENCE:
+                    $read = (yield from $this->stream->read());
+                    if ($breakOnEof && $read === null) {
+                        return;
+                    }
+                    $this->tempBuffer->init();
+                    $this->tempBuffer->append("&");
+                    if (preg_match("/[a-zA-Z]/u", $read)) {
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_NAMED_CHARACTER_REFERENCE);
+                    } elseif ($read == "#") {
+                        $this->tempBuffer->append($read);
+                        $this->setState(State::$STATE_NUMERIC_CHARACTER_REFERENCE);
+                    } else {
+                        $this->stream->unconsume();
+                        yield from $this->flushCodepointsConsumed();
+                        $this->state->doReturn();
+                    }
+                    break;
+                case State::$STATE_NAMED_CHARACTER_REFERENCE:
+                    $cur = NamedEntity::$TABLE;
+                    $candidate = null;
+                    $lastWasSemicolon = false;
+                    $start = $this->stream->save();
+                    $this->stream->mark();
+                    $consumed = "";
+                    for ($chr = $this->stream->peek(); $chr != null && isset($cur[0][$chr]); $chr = $this->stream->peek()) {
+                        yield from $this->stream->read();
+                        $cur = $cur[0][$chr];
+                        $consumed .= $chr;
+                        if ($cur[1] != null) {
+                            $this->stream->mark();
+                            $candidate = $cur[1];
+                            $lastWasSemicolon = ($chr == ";");
+                            $this->tempBuffer->append($consumed);
+                            $consumed = "";
+                        }
+                    }
+
+                    if ($breakOnEof && $chr === null) {
+                        // TODO: something better than this.
+                        $this->tempBuffer->release();
+                        $this->tempBuffer->init();
+                        $this->tempBuffer->append("&");
+                        $this->stream->load($start);
+                        return;
+                    }
+                    $this->stream->reset();
+
+                    if ($candidate !== null) {
+                        if ($this->consumingAsPartOfAnAttribute() && !$lastWasSemicolon && preg_match("/[a-zA-Z0-9=]/u", $this->stream->peek())) {
+                            yield from $this->flushCodepointsConsumed();
+                            $this->state->doReturn();
+                        } else {
+                            if (!$lastWasSemicolon) {
+                                yield from $this->parseError(ParseErrors::getMissingSemicolonAfterCharacterReference($this->stream->getLineAndColumn()));
+                            }
+                            $this->tempBuffer->release();
+                            $this->tempBuffer->init();
+                            $this->tempBuffer->append($candidate);
+                            yield from $this->flushCodepointsConsumed();
+                            $this->state->doReturn();
+                        }
+                    } else {
+                        $this->setState(State::$STATE_AMBIGUOUS_AMPERSAND);
+                    }
+                    break;
+                case State::$STATE_AMBIGUOUS_AMPERSAND:
+                    $this->tempBuffer->append($this->stream->readAlnum());
+                    $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next === null) {
+                        return;
+                    }
+                    if ($next == ";") {
+                        yield from $this->parseError(ParseErrors::getUnknownNamedCharacterReference($this->stream->getLineAndColumn()));
+                    }
+                    yield from $this->flushCodepointsConsumed();
+                    $this->stream->unconsume();
+                    $this->state->doReturn();
+                    break;
+                case State::$STATE_NUMERIC_CHARACTER_REFERENCE:
+                    $this->characterReferenceCode = 0;
+                    $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next === null) {
+                        return;
+                    } elseif ($next == "x" || $next == "X") {
+                            $this->tempBuffer->append($next);
+                            $this->setState(State::$STATE_HEXADECIMAL_CHARACTER_REFERENCE_START);
+                    } else {
+                        $this->stream->unconsume();
+                        $this->setState(STATE::$STATE_DECIMAL_CHARACTER_REFERENCE_START);
+                    }
+                    break;
+                case State::$STATE_HEXADECIMAL_CHARACTER_REFERENCE_START:
+                    $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next === null) {
+                        return;
+                    } elseif (preg_match("/[a-fA-F0-9]/u", $next)) {
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_HEXADECIMAL_CHARACTER_REFERENCE);
+                    } else {
+                        yield from $this->parseError(ParseErrors::getAbsenceOfDigitsInNumericCharacterReference($this->stream->getLineAndColumn()));
+                        yield from $this->flushCodepointsConsumed();
+                        $this->stream->unconsume();
+                        $this->state->doReturn();
+                    }
+                    break;
+                case State::$STATE_DECIMAL_CHARACTER_REFERENCE_START:
+                    $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next === null) {
+                        return;
+                    } elseif (preg_match("/[0-9]/u", $next)) {
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_DECIMAL_CHARACTER_REFERENCE);
+                    } else {
+                        yield from $this->parseError(ParseErrors::getAbsenceOfDigitsInNumericCharacterReference($this->stream->getLineAndColumn()));
+                        yield from $this->flushCodepointsConsumed();
+                        $this->stream->unconsume();
+                        $this->state->doReturn();
+                    }
+                    break;
+                case State::$STATE_HEXADECIMAL_CHARACTER_REFERENCE:
+                    $read = $this->stream->readHex();
+                    if ($read != "") {
+                        $this->characterReferenceCode *= (16 * strlen($read));
+                        $this->characterReferenceCode += hexdec($read);
+                    }
+                    $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next === null) {
+                        return;
+                    } elseif ($next == ";") {
+                        $this->setState(State::$STATE_NUMERIC_CHARACTER_REFERENCE_END);
+                    } else {
+                        yield from $this->parseError(ParseErrors::getMissingSemicolonAfterCharacterReference($this->stream->getLineAndColumn()));
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_NUMERIC_CHARACTER_REFERENCE_END);
+                    }
+                    break;
+                case State::$STATE_DECIMAL_CHARACTER_REFERENCE:
+                    $read = $this->stream->readNum();
+                    if ($read != "") {
+                        $this->characterReferenceCode *= (10 * strlen($read));
+                        $this->characterReferenceCode += $read;
+                    }
+                    $next = (yield from $this->stream->read());
+                    if ($breakOnEof && $next === null) {
+                        return;
+                    } elseif ($next == ";") {
+                        $this->setState(State::$STATE_NUMERIC_CHARACTER_REFERENCE_END);
+                    } else {
+                        yield from $this->parseError(ParseErrors::getMissingSemicolonAfterCharacterReference($this->stream->getLineAndColumn()));
+                        $this->stream->unconsume();
+                        $this->setState(State::$STATE_NUMERIC_CHARACTER_REFERENCE_END);
+                    }
+                    break;
+                case State::$STATE_NUMERIC_CHARACTER_REFERENCE_END:
+                    if (Codepoints::isNull($this->characterReferenceCode)) {
+                        yield from $this->parseError(ParseErrors::getNullCharacterReference($this->stream->getLineAndColumn()));
+                        $this->characterReferenceCode = 0xFFFD;
+                    } elseif (Codepoints::isOutOfRange($this->characterReferenceCode)) {
+                        yield from $this->parseError(ParseErrors::getCharacterReferenceOutsideUnicodeRange($this->stream->getLineAndColumn()));
+                        $this->characterReferenceCode = 0xFFFD;
+                    } elseif (Codepoints::isSurrogate($this->characterReferenceCode)) {
+                        yield from $this->parseError(ParseErrors::getSurrogateCharacterReference($this->stream->getLineAndColumn()));
+                        $this->characterReferenceCode = 0xFFFD;
+                    } elseif (Codepoints::isNonCharacter($this->characterReferenceCode)) {
+                        yield from $this->parseError(ParseErrors::getNoncharacterCharacterReference($this->stream->getLineAndColumn()));
+                    } elseif ($this->characterReferenceCode == 0x0D || (Codepoints::isControl($this->characterReferenceCode) && !Codepoints::isAsciiWhitespace($this->characterReferenceCode))) {
+                        yield from $this->parseError(ParseErrors::getControlCharacterReference($this->stream->getLineAndColumn()));
+                        $this->characterReferenceCode = CharRefRemapping::remapIfNeeded($this->characterReferenceCode);
+                    }
+                    $this->tempBuffer->release();
+                    $this->tempBuffer->init();
+                    $this->tempBuffer->append(mb_decode_numericentity("&#" . $this->characterReferenceCode . ";", [ 0x0, 0x10ffff, 0, 0x10ffff ]));
+                    yield from $this->flushCodepointsConsumed();
+                    $this->state->doReturn();
+                    break;
                 default:
                     throw new \Exception("TODO: Parse error invalid state: " . $this->getState());
             }
         }
         if (!$breakOnEof) {
             yield new HtmlEofToken();
+        }
+    }
+
+    private function flushCodepointsConsumed() {
+        if ($this->consumingAsPartOfAnAttribute()) {
+            $this->currentTokenBuilder->appendToAttributeValue($this->tempBuffer->useValue());
+        } else {
+            yield from $this->emit(new HtmlCharToken($this->tempBuffer->useValue()));
+        }
+    }
+
+    private function consumingAsPartOfAnAttribute() {
+        switch ($this->state->getReturnState()) {
+            case State::$STATE_ATTRIBUTE_VALUE_DOUBLE_QUOTED:
+            case State::$STATE_ATTRIBUTE_VALUE_SINGLE_QUOTED:
+            case State::$STATE_ATTRIBUTE_VALUE_UNQUOTED:
+                return true;
+            default:
+                return false;
         }
     }
 
